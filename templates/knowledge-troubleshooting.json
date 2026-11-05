@@ -1,0 +1,47 @@
+{
+  "name": "Troubleshooting guide",
+  "about": "Starter for the faults of one product or system. Generic headings only: rename, delete and fill them. Everything it adds comes in \"to verify\".",
+  "items": [
+    {
+      "depth": 0,
+      "title": "Safety first",
+      "notes": "What must be isolated or checked before anyone works on it."
+    },
+    {
+      "depth": 0,
+      "title": "Alarms and codes",
+      "notes": "Each alarm or fault code, one branch each: what it means, the likely causes, what to check.",
+      "props": {
+        "layout": "columns"
+      }
+    },
+    {
+      "depth": 1,
+      "title": "Alarm 1"
+    },
+    {
+      "depth": 1,
+      "title": "Alarm 2"
+    },
+    {
+      "depth": 0,
+      "title": "Symptoms without an alarm",
+      "notes": "What people notice (noise, no cooling, leaks), one branch each, with the causes to check in order."
+    },
+    {
+      "depth": 0,
+      "title": "Measurements",
+      "notes": "The readings to take, with units, where to take them, and the normal range."
+    },
+    {
+      "depth": 0,
+      "title": "Parts often replaced",
+      "notes": "Parts that fail most, how to tell, and how to order them."
+    },
+    {
+      "depth": 0,
+      "title": "When to escalate",
+      "notes": "What the site cannot fix, and who to call with which information."
+    }
+  ]
+}

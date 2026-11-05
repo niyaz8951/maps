@@ -22,7 +22,7 @@
   function link(n) {
     if (MP.linesFrom(n.id).length >= 20) { Core.toast('A branch holds up to 20 links. Remove one first.', 'danger'); return; }
     var err = errBox(), area = el('div', { class: 'stack' });
-    var kind = MP.select('mp-link-kind', [['link', 'Another branch'], ['web', 'A web address']], 'link');
+    var kind = MP.select('mp-link-kind', [['link', 'Another branch'], ['tile', 'A page of another DAME tile'], ['web', 'A web address']], 'link');
     var label = el('input', { id: 'mp-link-label', maxlength: '120', placeholder: 'Leave empty to show the name of what it leads to', autocomplete: 'off' });
     var get = function () { return null; };
     function draw() {
@@ -59,6 +59,14 @@
           if (!brSel.value) return 'Choose the branch to link to.';
           return { p_kind: 'link', p_rel: relSel.value, p_to: brSel.value, p_target: null };
         };
+      } else if (kind.value === 'tile') {
+        var tp = el('input', { id: 'mp-link-tile', maxlength: '300', placeholder: 'e.g. projects  or  hvac-notes/note.html?id=12', autocomplete: 'off', spellcheck: 'false' });
+        area.appendChild(MP.field('Tile and page', tp, 'The tile\'s id as in its address (/projects/ is projects), then the page if any. Copy it from the address bar after the site name. It opens on this site, for whoever has that tile.'));
+        get = function () {
+          var v = tp.value.trim().replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '');
+          return /^[a-z][a-z0-9-]{1,30}(\/[A-Za-z0-9._~%\/?=&#+-]*)?$/.test(v) && !/\.\.|\/\//.test(v) ? { p_kind: 'tile', p_rel: null, p_to: null, p_target: v.replace(/\/$/, '') || v }
+            : 'Write the tile\'s id and the page, e.g. projects or hvac-notes/note.html?id=12.';
+        };
       } else {
         var url = el('input', { id: 'mp-link-url', type: 'url', maxlength: '500', placeholder: 'https://', autocomplete: 'off' });
         area.appendChild(MP.field('Web address', url, 'It opens in a new tab. Only https:// addresses.'));
@@ -93,7 +101,58 @@
   }
 
   // ---------- import ----------
-  function importSheet() {
+  function importSheet() { if (MP.isFlow()) flowImport(); else outlineImport(); }
+  // a flowchart: Mermaid, or the outline Export writes (Shape, Lane, Next lines); always under the centre, all to verify
+  function flowImport() {
+    var root = N(MP.M.root);
+    var ta = el('textarea', { id: 'mp-import-text', spellcheck: 'false', class: 'mp-io-text',
+      placeholder: 'flowchart TD\n  A([Request received]) --> B{Standard product?}\n  B -->|Yes| C[Prepare the offer]\n  B -->|No| D[Ask the factory]\n  D --> C\n  C --> E([Offer sent])' });
+    var file = el('input', { type: 'file', id: 'mp-import-file', accept: '.txt,.mmd,.md,text/plain' });
+    var info = el('div', { class: 'muted' }), err = errBox();
+    function read() {
+      var t = ta.value, mer = /^\s*(?:%%[^\n]*\n\s*)*(flowchart|graph)\b/i.test(t), r;
+      if (mer) r = MP.fc.mermaid.parse(t);
+      else { var o = MP.io.parse(t, 'flowchart'); r = { items: o.items, lanes: o.centre ? o.centre.lanes : [], warnings: o.unknown.map(function (x) { return 'No step is called "' + x + '": that Next line stays a special note.'; }) }; }
+      r.mermaid = mer;
+      var arrows = r.items.reduce(function (a, x) { return a + (x.next || []).length; }, 0);
+      Core.clear(info);
+      if (!t.trim()) info.appendChild(el('p', { text: 'Paste a Mermaid flowchart (it starts with "flowchart TD"), or an Export of a flowchart from this tile. Or choose a file.' }));
+      else if (!r.items.length) info.appendChild(el('p', { text: r.warnings[0] || 'No steps found.' }));
+      else info.appendChild(el('p', { text: (mer ? 'Mermaid: ' : 'Outline: ') + 'adds ' + MP.plural(r.items.length, 'step') + ' and ' + MP.plural(arrows, 'arrow') + ', all to verify.' +
+        (r.lanes.length ? ' Lanes: ' + r.lanes.join(', ') + '.' : '') }));
+      r.warnings.slice(0, 6).forEach(function (w) { info.appendChild(el('p', { class: 'fc-warnline', text: w })); });
+      if (r.warnings.length > 6) info.appendChild(el('p', { text: '... and ' + (r.warnings.length - 6) + ' more.' }));
+      return r;
+    }
+    ta.addEventListener('input', read);
+    file.addEventListener('change', function () {
+      var f = file.files && file.files[0]; if (!f) return;
+      if (f.size > 2 * 1024 * 1024) { fail(err, 'Choose a text file under 2 MB.'); return; }
+      var rd = new FileReader();
+      rd.onload = function () { ta.value = String(rd.result || ''); read(); };
+      rd.onerror = function () { fail(err, 'The file could not be read.'); };
+      rd.readAsText(f);
+    });
+    read();
+    var body = el('div', { class: 'stack' }, el('p', { class: 'muted', text: 'New steps come in beside what is there; draw arrows to them afterwards. Shapes, lanes and answers come with them.' }),
+      ta, MP.field('Or a file (.mmd, .txt)', file), info, err);
+    Core.sheet({ title: 'Import into ' + root.title, body: body, actions: [{ label: 'Cancel', value: null }, { label: 'Add to flowchart', kind: 'primary', onClick: function () {
+      var r = read(); err.hidden = true;
+      if (!r.items.length) return fail(err, 'Nothing to add.');
+      if (r.items.length > 500) return fail(err, 'One import holds up to 500 steps.');
+      var items = r.items.map(function (x) { return { key: x.key, title: x.title, notes: x.notes || '', special: x.special || [], type: x.type, props: x.props || {}, place: x.place, next: x.next || [] }; });
+      return MP.settled().then(function () { return MP.rpc('maps_import', { p_parent: root.id, p_items: items }); }).then(function (res) {
+        return MP.reload().then(function () {
+          var have = (N(MP.M.root).props.lanes || []).slice(), add = r.lanes.filter(function (x) { return !have.some(function (h) { return h.toLowerCase() === x.toLowerCase(); }); });
+          if (add.length) { var p = {}; for (var k in N(MP.M.root).props) p[k] = N(MP.M.root).props[k]; p.lanes = have.concat(add).slice(0, 12); MP.setList(N(MP.M.root), 'props', p); }
+          if (res.first && N(res.first)) MP.nav.reveal(res.first);
+          Core.toast('Added ' + MP.plural(res.added, 'step') + ' and ' + MP.plural(res.arrows || 0, 'arrow') + '.', 'success');
+          return true;
+        });
+      }, function (e) { return fail(err, MP.msg(e)); });
+    } }] });
+  }
+  function outlineImport() {
     var target = N(st.sel || st.focus);
     var ta = el('textarea', { id: 'mp-import-text', spellcheck: 'false', class: 'mp-io-text',
       placeholder: 'Components\n  Compressor\n    > Raises the refrigerant pressure.\n    ! Check the starting current\n  Evaporator\nStandards\n  AHRI 550/590' });
@@ -133,7 +192,62 @@
   }
 
   // ---------- export ----------
-  function exportSheet() {
+  function exportSheet() { if (MP.isFlow()) flowExport(); else outlineExport(); }
+  function flowOutline() {
+    return MP.io.write(function (id) { return N(id); }, MP.M.root, { name: function (t) { return MP.SHAPE_NAME[t] || 'Process'; },
+      exits: function (id) { return MP.exitsOf(id).map(function (l) { return { label: l.label, to_title: N(l.to).title }; }); } });
+  }
+  function flowExport() {
+    MP.flush();
+    var fmt = MP.select('mp-export-fmt', [['mermaid', 'Mermaid (for other tools, and for Import)'], ['outline', 'Plain outline (names, notes, Shape, Lane, Next)']], MP.store('fc-export') || 'mermaid');
+    var ta = el('textarea', { id: 'mp-export-text', class: 'mp-io-text', readonly: true, spellcheck: 'false' });
+    function fill() { ta.value = fmt.value === 'mermaid' ? MP.chart.mermaid() : flowOutline(); MP.store('fc-export', fmt.value); }
+    fmt.addEventListener('change', fill); fill();
+    var files = el('div', { class: 'row' },
+      el('button', { type: 'button', class: 'btn small', text: 'Drawing (.svg)', on: { click: MP.chart.downloadSvg } }),
+      el('button', { type: 'button', class: 'btn small', text: 'Step list (.xlsx)', on: { click: MP.chart.excel } }),
+      el('button', { type: 'button', class: 'btn small', text: 'Print A4', on: { click: function () { closeSheet(); MP.chart.print('a4'); } } }),
+      el('button', { type: 'button', class: 'btn small', text: 'Print A3', on: { click: function () { closeSheet(); MP.chart.print('a3'); } } }));
+    var body = el('div', { class: 'stack' }, el('p', { class: 'muted', text: 'The whole flowchart. A print or PDF comes from Print (choose "Save as PDF" in the print window).' }),
+      files, MP.field('As text', fmt), ta);
+    Core.sheet({ title: 'Export ' + MP.M.map.name, body: body, actions: [
+      { label: 'Close', value: null },
+      { label: 'Download text', onClick: function () { Core.download(MP.fileName(MP.M.map.name) + (fmt.value === 'mermaid' ? ' - flowchart.mmd' : ' - outline.txt'), new Blob(['\ufeff' + ta.value.replace(/\n/g, '\r\n')], { type: 'text/plain;charset=utf-8' })); return false; } },
+      { label: 'Copy', kind: 'primary', onClick: function () { copyText(ta); return false; } }] });
+  }
+  function closeSheet() { var b = document.querySelector('.sheet-back'); if (b) b.click(); }
+  function copyText(ta) {
+    try { navigator.clipboard.writeText(ta.value).then(function () { Core.toast('Copied.', 'success'); }, function () { ta.focus(); ta.select(); Core.toast('Press Ctrl+C to copy the selected text.'); }); }
+    catch (e) { ta.focus(); ta.select(); Core.toast('Press Ctrl+C to copy the selected text.'); }
+  }
+  // ---------- print: a branch (or the map) as an A4 outline ----------
+  function printOutline(id) {
+    MP.flush();
+    var top = N(id), host = $('mp-print') || document.body.appendChild(el('div', { id: 'mp-print', 'aria-hidden': 'true' })), count = 0;
+    Core.clear(host); host.className = 'mp-print a4p outline';
+    host.appendChild(el('h1', { text: top.title }));
+    (function walk(nid, d) {
+      var n = N(nid); if (!n) return;
+      count++;
+      if (d > 0) {
+        var b = el('section', { class: 'pr-b pr-d' + Math.min(d, 6) });
+        b.appendChild(el(d === 1 ? 'h2' : 'h3', { text: n.title }, n.status !== 'verified' ? el('span', { class: 'pr-st', text: ' · ' + MP.statusWord(n).toLowerCase() }) : null));
+        if (n.notes) b.appendChild(el('p', { class: 'pr-notes', text: n.notes }));
+        if (n.special.length) b.appendChild(el('ul', { class: 'pr-sp' }, n.special.map(function (x) { return el('li', { text: x }); })));
+        var links = MP.linesFrom(nid).filter(function (l) { return l.kind !== 'flow'; });
+        if (links.length) b.appendChild(el('ul', { class: 'pr-links' }, links.map(function (l) {
+          return el('li', { text: l.kind === 'web' ? (l.label ? l.label + ': ' : '') + l.target : MP.lineWords({ kind: l.kind, rel: l.rel, label: l.label, target: l.target,
+            to_title: N(l.to) ? N(l.to).title : l.other ? l.other.title + ' (' + l.other.map + ')' : '' }) });
+        })));
+        host.appendChild(b);
+      } else if (n.notes) host.appendChild(el('p', { class: 'pr-notes', text: n.notes }));
+      n.kids.forEach(function (k) { walk(k, d + 1); });
+    })(id, 0);
+    host.insertBefore(el('p', { class: 'mp-print-sub', text: (id === MP.M.root ? 'Map' : MP.M.map.name) + ' · ' + MP.plural(count - 1, 'branch', 'branches') + ' · printed ' + Core.date(new Date().toISOString()) }), host.childNodes[1] || null);
+    document.documentElement.classList.add('mp-printing');
+    setTimeout(function () { window.print(); }, 50);
+  }
+  function outlineExport() {
     var n = N(st.focus);
     MP.flush();
     var text = MP.io.write(function (id) { return N(id); }, n.id);
@@ -143,6 +257,7 @@
       ta);
     Core.sheet({ title: 'Export ' + n.title, body: body, actions: [
       { label: 'Close', value: null },
+      { label: 'Print (A4)', onClick: function () { setTimeout(function () { printOutline(n.id); }, 0); return true; } },
       { label: 'Download .txt', onClick: function () { Core.download(MP.fileName(n.title) + ' - outline.txt', new Blob(['﻿' + text.replace(/\n/g, '\r\n')], { type: 'text/plain;charset=utf-8' })); return false; } },
       { label: 'Copy', kind: 'primary', onClick: function () {
         try { navigator.clipboard.writeText(text).then(function () { Core.toast('Copied.', 'success'); }, function () { ta.focus(); ta.select(); Core.toast('Press Ctrl+C to copy the selected text.'); }); }
@@ -240,6 +355,17 @@
       if (b.share !== a.share) out.push(el('div', { text: 'Shared: ' + (MP.SHARE[b.share] || b.share) + ' → ' + (MP.SHARE[a.share] || a.share) }));
       return out;
     }
+    if (h.action === 'branch_edit' && MP.isFlow()) {
+      if (b.title !== a.title) out.push(el('div', {}, 'Name: ', el('del', { text: b.title }), ' → ', el('ins', { text: a.title })));
+      if ((b.notes || '') !== (a.notes || '')) out.push(el('div', { text: 'Notes changed.' }));
+      if ((b.type || '') !== (a.type || '')) out.push(el('div', { text: 'Shape: ' + (MP.SHAPE_NAME[b.type] || b.type) + ' → ' + (MP.SHAPE_NAME[a.type] || a.type) }));
+      if (((b.props || {}).lane || '') !== ((a.props || {}).lane || '')) out.push(el('div', { text: 'Lane: ' + ((b.props || {}).lane || 'No lane') + ' → ' + ((a.props || {}).lane || 'No lane') }));
+      if (JSON.stringify((b.props || {}).lanes || []) !== JSON.stringify((a.props || {}).lanes || [])) out.push(el('div', { text: 'Lanes: ' + (((a.props || {}).lanes || []).join(', ') || 'none') }));
+      if (JSON.stringify(b.place || null) !== JSON.stringify(a.place || null)) out.push(el('div', { text: a.place ? 'Placed on the chart by hand.' : 'Back to auto layout.' }));
+      var fs = b.special || [], gs = a.special || [];
+      if (JSON.stringify(fs) !== JSON.stringify(gs)) out.push(el('div', { text: 'Special notes changed.' }));
+      return out;
+    }
     if (h.action === 'branch_edit') {
       if (b.title !== a.title) out.push(el('div', {}, 'Name: ', el('del', { text: b.title }), ' → ', el('ins', { text: a.title })));
       if ((b.notes || '') !== (a.notes || '')) {
@@ -254,6 +380,9 @@
       if (JSON.stringify(b.place || null) !== JSON.stringify(a.place || null)) out.push(el('div', { text: 'Place on the drawing changed.' }));
       return out;
     }
+    if (h.action === 'line_add' && a && (a.kind === 'flow' || a.kind === 'tile')) { out.push(el('div', { text: MP.lineWords(a) })); return out; }
+    if (h.action === 'line_edit' && (a.kind === 'flow' || b.kind === 'flow')) { out.push(el('div', { text: 'Answer: "' + (b.label || '') + '" → "' + (a.label || '') + '"' })); return out; }
+    if (h.action === 'line_delete' && b && (b.kind === 'flow' || b.kind === 'tile')) { out.push(el('div', { text: b.kind === 'flow' ? 'Arrow' + (b.label ? ' "' + b.label + '"' : '') : 'Tile link: ' + (b.label || b.target) })); return out; }
     if (h.action === 'line_add' && a) out.push(el('div', { text: a.kind === 'web' ? 'Web: ' + (a.target || '') : MP.rel(a.rel).label + ': ' + (a.to_title || '') }));
     if (h.action === 'line_edit') out.push(el('div', { text: MP.rel(b.rel).label + (b.label ? ' "' + b.label + '"' : '') + ' → ' + MP.rel(a.rel).label + (a.label ? ' "' + a.label + '"' : '') }));
     if (h.action === 'line_delete' && b) out.push(el('div', { text: b.kind === 'web' ? 'Web: ' + (b.target || '') : MP.rel(b.rel).label + (b.label ? ' "' + b.label + '"' : '') }));
@@ -271,12 +400,14 @@
         if (!last && !rows.length) list.appendChild(el('p', { class: 'muted', text: 'Nothing changed yet.' }));
         rows.forEach(function (h) {
           last = h.id;
-          var what = ACTIONS[h.action] || h.action, onBranch = h.branch && !/^map_/.test(h.action);
+          var lk = (h.after && h.after.kind) || (h.before && h.before.kind), what = ACTIONS[h.action] || h.action, onBranch = h.branch && !/^map_/.test(h.action);
           var head = el('div', { class: 'mp-hhead' },
             el('span', {}, el('b', { text: what }), onBranch && !branchId ? ' ' : '',
               onBranch && !branchId ? (h.gone ? el('span', { text: h.title || 'a branch' }) :
                 el('button', { type: 'button', class: 'mp-hlink', text: h.title || 'a branch', on: { click: function () { var id = h.branch; Core.$('.sheet-back') && Core.$('.sheet-back').click(); MP.nav.reveal(id); MP.editor.open(id); } } })) : null),
             el('span', { class: 'faint', text: (h.by || 'someone') + ' · ' + Core.dateTime(h.at) }));
+          if (lk === 'flow') what = { line_add: 'Added an arrow from', line_edit: 'Changed an arrow from', line_delete: 'Removed an arrow from' }[h.action] || what;
+          if (MP.isFlow() && /^branch_/.test(h.action)) what = what.replace('branch', 'step');
           var detail = changes(h);
           list.appendChild(el('div', { class: 'mp-hrow' }, head, detail.length ? el('div', { class: 'mp-hdetail' }, detail) : null));
         });
@@ -289,5 +420,6 @@
       actions: [{ label: 'Close', kind: 'primary', value: null }] });
   }
 
-  MP.sheets = { link: link, moveTo: moveTo, importSheet: importSheet, exportSheet: exportSheet, settings: settings, trash: trash, history: history };
+  window.addEventListener('afterprint', function () { document.documentElement.classList.remove('mp-printing'); var h = $('mp-print'); if (h) Core.clear(h); });
+  MP.sheets = { printOutline: printOutline, link: link, moveTo: moveTo, importSheet: importSheet, exportSheet: exportSheet, settings: settings, trash: trash, history: history };
 })();

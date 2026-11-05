@@ -21,7 +21,7 @@ window.MP = (function () {
   MP.UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   MP.SHARE = { private: 'Only me', team_read: 'Team can read', team_edit: 'Team can edit' };
   MP.SHARE_HINT = 'Team = everyone who has Maps on the dashboard.';
-  MP.KIND = { knowledge: 'Knowledge', piping: 'Piping', wiring: 'Wiring' };
+  MP.KIND = { knowledge: 'Knowledge', flowchart: 'Flowchart', piping: 'Piping', wiring: 'Wiring' };
 
   // View settings only (never data): kept per browser under dame.maps.* and cleared at sign-out by the core.
   MP.store = function (name, value) {
@@ -41,22 +41,23 @@ window.MP = (function () {
     'INVALID:name_taken': 'There is already a map with that name. Choose another name.',
     'INVALID:too_many': 'You have 200 maps. Delete one you no longer need first.',
     'INVALID:size': 'A map holds up to 2000 branches. Start a second map for the rest.',
-    'INVALID:items': 'Nothing to add, or more than 500 branches in one go. Import the outline in parts.',
+    'INVALID:items': 'Nothing to add, more than 500 branches in one go, or arrows that do not match the steps. Import in parts, and in a flowchart only steps (no branches under them).',
     'INVALID:props': 'One of the values is not allowed here.',
     'INVALID:type': 'That type is not available in this map.',
     'INVALID:place': 'That place on the drawing is not valid.',
-    'INVALID:parent': 'It cannot go there: never inside itself, and the branch it belongs under must be there (restore that one first).',
+    'INVALID:parent': 'It cannot go there: never inside itself, the branch it belongs under must be there (restore that one first), and in a flowchart every step sits under the centre.',
     'INVALID:branch': 'This is the centre of the map: rename or delete the map instead.',
     'INVALID:lines': 'A branch holds up to 20 links. Remove one first.',
-    'INVALID:duplicate': 'That link is there already.',
+    'INVALID:duplicate': 'That link or arrow is there already.',
     'INVALID:rel': 'Choose what the link means.',
-    'INVALID:to': 'Choose another branch to link to.',
-    'INVALID:target': 'A web link starts with https:// and has no spaces.',
-    'INVALID:label': 'The text shown is at most 120 characters.',
+    'INVALID:to': 'Choose another branch to link to. An arrow goes from one step to another step of the same flowchart.',
+    'INVALID:target': 'A web link starts with https:// and has no spaces. A tile link is the tile\'s id, then the page: e.g. projects/index.html.',
+    'INVALID:label': 'The text shown is at most 120 characters; the answer on an arrow at most 40.',
     'INVALID:kind': 'That is not available yet.',
     'INVALID:share': 'Choose who the map is shared with.',
     'INVALID:q': 'Search for up to 100 characters.',
     'INVALID:patch': 'Nothing to save.',
+    'INVALID:comment': 'Say why in 1 to 500 characters.',
     NOT_FOUND: 'That map or branch is not available. It was deleted, or it is no longer shared with you.'
   };
   MP.msg = function (err) {
@@ -278,6 +279,18 @@ window.MP = (function () {
   };
   MP.shareSelect = function (id, value, allowPrivate) {
     return MP.select(id, Object.keys(MP.SHARE).filter(function (k) { return allowPrivate !== false || k !== 'private'; }).map(function (k) { return [k, MP.SHARE[k]]; }), value);
+  };
+  // A verifier sends a branch back with a comment. Resolves true when it was sent.
+  MP.sendBack = function (id, title) {
+    var ta = el('textarea', { id: 'mp-sendback', maxlength: '500', rows: '4', placeholder: 'What to check, add or correct, e.g. "Which standard does this rating come from?"' });
+    var err = el('p', { class: 'notice danger', hidden: true, role: 'alert' });
+    return Core.sheet({ title: 'Send back ' + title, body: el('div', { class: 'stack' }, el('p', { class: 'muted', text: 'It goes back to "to verify" with your comment, shown on the branch until a verifier verifies it.' }),
+      MP.field('Why', ta), err), actions: [{ label: 'Cancel', value: false }, { label: 'Send back', kind: 'primary', onClick: function () {
+        var v = ta.value.trim(); err.hidden = true;
+        if (!v) { err.textContent = 'Say what needs to change.'; err.hidden = false; return false; }
+        return MP.settled().then(function () { return MP.rpc('maps_send_back', { p_branch: id, p_comment: v }); })
+          .then(function () { Core.toast('Sent back.', 'success'); return true; }, function (e) { err.textContent = MP.msg(e); err.hidden = false; return false; });
+      } }] }).then(function (v) { return !!v; });
   };
   MP.fileName = function (s) { return (String(s || '').replace(/[^A-Za-z0-9 _.-]+/g, ' ').replace(/\s+/g, ' ').trim() || 'map'); };
 

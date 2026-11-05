@@ -1,0 +1,43 @@
+{
+  "name": "Standard or specification",
+  "about": "Starter for understanding one standard or one specification section. Generic headings only: rename, delete and fill them. Everything it adds comes in \"to verify\".",
+  "items": [
+    {
+      "depth": 0,
+      "title": "What it covers",
+      "notes": "Its scope, the edition, and what it does not cover."
+    },
+    {
+      "depth": 0,
+      "title": "Terms",
+      "notes": "Its definitions that matter, one branch each."
+    },
+    {
+      "depth": 0,
+      "title": "Requirements",
+      "notes": "The clauses that set requirements, one branch each, with the clause number in the name.",
+      "props": {
+        "layout": "columns"
+      }
+    },
+    {
+      "depth": 1,
+      "title": "Clause"
+    },
+    {
+      "depth": 0,
+      "title": "Tests and ratings",
+      "notes": "How compliance is tested or rated, with the conditions."
+    },
+    {
+      "depth": 0,
+      "title": "How we comply",
+      "notes": "Our products or practice against each requirement: complies, complies with an option, or does not."
+    },
+    {
+      "depth": 0,
+      "title": "Related standards",
+      "notes": "Standards it refers to, replaces or is equivalent to. Link them."
+    }
+  ]
+}

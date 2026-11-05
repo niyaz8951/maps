@@ -16,8 +16,11 @@
 <script src="/dame-hub/core/v1/core.js" defer></script>
 <script src="/maps/assets/mp-data.js" defer></script>
 <script src="/maps/assets/mp-io.js" defer></script>
+<script src="/maps/assets/mp-fc.js" defer></script>
+<script src="/maps/assets/xlsx-lite.js" defer></script>
 <script src="/maps/assets/mp-list.js" defer></script>
 <script src="/maps/assets/mp-map.js" defer></script>
+<script src="/maps/assets/mp-chart.js" defer></script>
 <script src="/maps/assets/mp-outline.js" defer></script>
 <script src="/maps/assets/mp-editor.js" defer></script>
 <script src="/maps/assets/mp-sheets.js" defer></script>
@@ -32,9 +35,10 @@
     <div class="page-head">
       <div>
         <h1>Maps</h1>
-        <p class="muted">Knowledge as a growing tree. Open a map, click a branch to open it, double-click to read it.</p>
+        <p class="muted">Knowledge as a growing tree, and flowcharts. Open a map, click a branch to open it, double-click to read it.</p>
       </div>
       <div class="row">
+        <button class="btn ghost" type="button" id="mp-review" hidden>Review</button>
         <button class="btn ghost" type="button" id="mp-trash" hidden>Trash</button>
         <button class="btn primary" type="button" id="mp-new" hidden>Add map</button>
       </div>
@@ -84,6 +88,7 @@
         <p class="mp-hint" id="mp-hint"></p>
         <div class="mp-legend" id="mp-legend" hidden aria-label="What the lines mean"></div>
       </div>
+      <div class="fc-bar" id="fc-bar" hidden></div>
       <div class="mp-board" id="mp-board">
         <div class="mp-canvas" id="mp-canvas"><div class="mp-sizer" id="mp-sizer"><div class="mp-stage" id="mp-stage" role="tree" aria-label="Map"></div></div></div>
         <div class="mp-outline" id="mp-outline" hidden></div>

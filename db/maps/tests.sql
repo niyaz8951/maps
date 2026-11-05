@@ -144,8 +144,17 @@ begin
   perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''web'', null, null, ''http://example.com/x'', null)', v_x), 'INVALID:target');
   perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''web'', null, null, ''javascript:alert(1)'', null)', v_x), 'INVALID:target');
   perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''pipe'', ''p-supply'', %L, null, null)', v_x, v_y), 'INVALID:kind');
-  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', ''next'', %L, null, ''Yes'')', v_x, v_y), 'INVALID:kind');   -- 002: step 3
-  perform pg_temp.expect_error('select public.maps_create(''Approval'', ''flowchart'', ''private'', null)', 'INVALID:kind');          -- 002: step 3
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', ''next'', %L, null, ''Yes'')', v_x, v_y), 'INVALID:kind');   -- arrows: flowcharts only
+  perform pg_temp.expect_error('select public.maps_create(''Pumps'', ''piping'', ''private'', null)', 'INVALID:kind');                  -- piping: step 4
+  -- links to another tile (003): '<tile-id>' or '<tile-id>/<path>', never a full address
+  v := public.maps_line_add(v_x, 'tile', null, null, 'projects', 'Projects');
+  v := public.maps_line_add(v_x, 'tile', null, null, '/hvac-notes/note.html?id=12#top', null);
+  perform pg_temp.check((select l ->> 'target' from jsonb_array_elements(public.maps_get(v_a) -> 'lines') l where l ->> 'id' = v ->> 'id') = 'hvac-notes/note.html?id=12#top', 'tile link kept without the leading slash');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''tile'', null, null, ''https://example.com/x'', null)', v_x), 'INVALID:target');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''tile'', null, null, ''projects/../dame-hub/admin.html'', null)', v_x), 'INVALID:target');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''tile'', null, null, ''Projects'', null)', v_x), 'INVALID:target');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''tile'', null, null, ''projects//evil'', null)', v_x), 'INVALID:target');
+  perform public.maps_line_delete((l ->> 'id')::uuid) from jsonb_array_elements(public.maps_get(v_a) -> 'lines') l where l ->> 'kind' = 'tile';
   v := public.maps_line_save(v_line, 1, 'part', 'Part of');
   perform pg_temp.expect_error(format('select public.maps_line_save(%L, 1, ''see'', null)', v_line), 'INVALID:version');
   perform pg_temp.check((select count(*) from jsonb_array_elements(public.maps_get(v_a) -> 'lines')) = 2, 'two lines on the map');
@@ -264,6 +273,150 @@ begin
 
   perform pg_temp.act_as('mt_verify');
   perform pg_temp.expect_error(format('select public.maps_verify(%L, true, false)', pg_temp.got('b')), 'NOT_FOUND');   -- a map id, not a branch
+  reset role;
+end $$;
+
+-- ---------------------------------------------------------------- 003: flowcharts through the functions
+do $$
+declare v jsonb; v_f uuid; v_root uuid; v_s uuid; v_d uuid; v_p uuid; v_e uuid; v_new uuid; v_l uuid; v_priv uuid;
+begin
+  perform pg_temp.act_as('mt_edit');
+  v := public.maps_create('Approval', 'flowchart', 'team_edit',
+    '[{"key":"s","type":"start","title":"Request received","props":{"lane":"Sales"},"next":[{"to":"d"}]},
+      {"key":"d","type":"decision","title":"Standard product?","props":{"lane":"Sales"},"next":[{"to":"p","label":"Yes"},{"to":"s","label":" No "}]},
+      {"key":"p","title":"Prepare offer","props":{"lane":"Application"},"next":[{"to":"e"}]},
+      {"key":"e","type":"end","title":"Offer sent","place":{"x":40,"y":400}}]');
+  v_f := (v ->> 'id')::uuid; perform pg_temp.put('f', v_f::text);
+  v := public.maps_get(v_f);
+  perform pg_temp.check(v -> 'map' ->> 'kind' = 'flowchart', 'flowchart made');
+  perform pg_temp.check((select b -> 'props' -> 'lanes' from jsonb_array_elements(v -> 'branches') b where b ->> 'parent' is null) = '["Sales", "Application"]'::jsonb, 'lanes kept in the order first used');
+  perform pg_temp.check(jsonb_array_length(v -> 'branches') = 5, 'centre and four steps');
+  perform pg_temp.check((select count(*) from jsonb_array_elements(v -> 'lines') l where l ->> 'kind' = 'flow') = 4, 'four arrows, the loop back included');
+  select (b ->> 'id')::uuid into v_root from jsonb_array_elements(v -> 'branches') b where b ->> 'parent' is null;
+  select (b ->> 'id')::uuid into v_s from jsonb_array_elements(v -> 'branches') b where b ->> 'title' = 'Request received';
+  select (b ->> 'id')::uuid into v_d from jsonb_array_elements(v -> 'branches') b where b ->> 'title' = 'Standard product?';
+  select (b ->> 'id')::uuid into v_p from jsonb_array_elements(v -> 'branches') b where b ->> 'title' = 'Prepare offer';
+  select (b ->> 'id')::uuid into v_e from jsonb_array_elements(v -> 'branches') b where b ->> 'title' = 'Offer sent';
+  perform pg_temp.check((select b ->> 'type' from jsonb_array_elements(v -> 'branches') b where (b ->> 'id')::uuid = v_p) = 'process', 'no type given: Process');
+  perform pg_temp.check((select b -> 'place' ->> 'y' from jsonb_array_elements(v -> 'branches') b where (b ->> 'id')::uuid = v_e) = '400.0', 'place kept');
+  perform pg_temp.check((select l ->> 'label' from jsonb_array_elements(v -> 'lines') l where (l ->> 'from')::uuid = v_d and (l ->> 'to')::uuid = v_s) = 'No', 'label trimmed');
+  perform pg_temp.check((select b ->> 'status' from jsonb_array_elements(v -> 'branches') b where (b ->> 'id')::uuid = v_d) = 'to_verify', 'imported steps to verify');
+  -- steps: always under the centre, a new one is a Process
+  v := public.maps_branch_add(v_root, 'Check stock'); v_new := (v ->> 'id')::uuid;
+  perform pg_temp.check(v ->> 'type' = 'process', 'new step is a Process');
+  perform pg_temp.expect_error(format('select public.maps_branch_add(%L, ''Under a step'')', v_d), 'INVALID:parent');
+  perform pg_temp.expect_error(format('select public.maps_branch_move(%L, %L, null)', v_new, v_d), 'INVALID:parent');
+  v := public.maps_branch_save(v_new, 1, '{"type":"decision","props":{"lane":"Application"}}');
+  perform pg_temp.check(v ->> 'type' = 'decision' and v -> 'props' ->> 'lane' = 'Application', 'shape and lane saved');
+  perform pg_temp.expect_error(format('select public.maps_branch_save(%L, 2, ''{"type":"pump"}'')', v_new), 'INVALID:type');
+  perform pg_temp.expect_error(format('select public.maps_branch_save(%L, 2, ''{"props":{"layout":"columns"}}'')', v_new), 'INVALID:props');
+  -- drag to place: the place is saved with the version read; an older version is refused
+  v := public.maps_branch_save(v_new, 2, '{"place":{"x":220.04,"y":-60}}');
+  perform pg_temp.check(v -> 'place' ->> 'x' = '220.0' and v ->> 'status' = 'to_verify', 'place saved');
+  perform pg_temp.expect_error(format('select public.maps_branch_save(%L, 2, ''{"place":{"x":1,"y":1}}'')', v_new), 'INVALID:version');
+  v := public.maps_branch_save(v_new, 3, '{"place":null}');
+  perform pg_temp.check(v -> 'place' = 'null'::jsonb, 'back to auto layout');
+  -- lanes in order on the centre
+  v := public.maps_branch_save(v_root, 1, '{"props":{"lanes":[" Application ","Sales","sales",""]}}');
+  perform pg_temp.check(v -> 'props' -> 'lanes' = '["Application", "Sales"]'::jsonb, 'lanes reordered, trimmed, no repeats');
+  perform pg_temp.expect_error(format('select public.maps_branch_save(%L, 2, %L)', v_root,
+    jsonb_build_object('props', jsonb_build_object('lanes', (select jsonb_agg('Lane ' || g) from generate_series(1, 13) g)))), 'INVALID:props');
+  perform pg_temp.expect_error(format('select public.maps_branch_save(%L, 2, %L)', v_root,
+    jsonb_build_object('props', jsonb_build_object('lanes', jsonb_build_array(repeat('x', 41))))), 'INVALID:props');
+  -- arrows
+  v := public.maps_line_add(v_new, 'flow', null, v_p, null, 'Yes'); v_l := (v ->> 'id')::uuid;
+  perform pg_temp.check((select l ->> 'rel' from jsonb_array_elements(public.maps_get(v_f) -> 'lines') l where (l ->> 'id')::uuid = v_l) = 'next', 'arrow: rel next');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', null, %L, null, ''Again'')', v_new, v_p), 'INVALID:duplicate');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', null, %L, null, null)', v_new, v_root), 'INVALID:to');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', null, %L, null, null)', v_root, v_new), 'INVALID:to');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', null, %L, null, null)', v_new, v_new), 'INVALID:to');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', null, %L, null, null)', v_new, pg_temp.got('x')), 'INVALID:to');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', null, %L, null, %L)', v_new, v_e, repeat('y', 41)), 'INVALID:label');
+  v := public.maps_line_save(v_l, 1, null, 'No');
+  perform pg_temp.check((select l ->> 'label' from jsonb_array_elements(public.maps_get(v_f) -> 'lines') l where (l ->> 'id')::uuid = v_l) = 'No', 'answer changed');
+  perform pg_temp.expect_error(format('select public.maps_line_save(%L, 2, ''see'', null)', v_l), 'INVALID:rel');
+  perform pg_temp.expect_error(format('select public.maps_line_save(%L, 1, null, ''Yes'')', v_l), 'INVALID:version');
+  -- import into a flowchart: under the centre, flat, arrows inside the items only
+  v := public.maps_import(v_root, '[{"key":"a","title":"Approve","next":[{"to":"b","label":"OK"}]},{"key":"b","type":"end","title":"Done"}]');
+  perform pg_temp.check((v ->> 'added')::integer = 2 and (v ->> 'arrows')::integer = 1, 'import with an arrow');
+  perform pg_temp.expect_error(format('select public.maps_import(%L, ''[{"title":"x"}]'')', v_d), 'INVALID:parent');
+  perform pg_temp.expect_error(format('select public.maps_import(%L, ''[{"title":"x","depth":1}]'')', v_root), 'INVALID:items');
+  perform pg_temp.expect_error(format('select public.maps_import(%L, ''[{"key":"a","title":"x","next":[{"to":"zz"}]}]'')', v_root), 'INVALID:items');
+  perform pg_temp.expect_error(format('select public.maps_import(%L, ''[{"key":"a","title":"x","next":[{"to":"a"}]}]'')', v_root), 'INVALID:items');
+  perform pg_temp.expect_error(format('select public.maps_import(%L, ''[{"key":"a","title":"x"},{"key":"a","title":"y"}]'')', v_root), 'INVALID:items');
+  perform pg_temp.expect_error(format('select public.maps_import(%L, ''[{"title":"x","type":"decision"}]'')', pg_temp.got('x')), 'INVALID:type');
+  perform pg_temp.expect_error(format('select public.maps_import(%L, ''[{"key":"a","title":"x","next":[{"to":"b"}]},{"key":"b","title":"y"}]'')', pg_temp.got('x')), 'INVALID:items');
+  -- a deleted step takes its arrows off the chart
+  perform public.maps_branch_delete(v_p);
+  perform pg_temp.check(not exists (select 1 from jsonb_array_elements(public.maps_get(v_f) -> 'lines') l where (l ->> 'to')::uuid = v_p or (l ->> 'from')::uuid = v_p), 'arrows of a deleted step hidden');
+  perform public.maps_branch_restore(v_p);
+  perform pg_temp.check((select count(*) from jsonb_array_elements(public.maps_get(v_f) -> 'lines') l where (l ->> 'to')::uuid = v_p or (l ->> 'from')::uuid = v_p) = 3, 'arrows back with the step');
+  v_priv := (public.maps_create('My flow', 'flowchart', 'private', null) ->> 'id')::uuid; perform pg_temp.put('fpriv', v_priv::text);
+  reset role;
+
+  -- another editor on a team-edit flowchart: may add arrows; a reader may not; a private one is not there
+  perform pg_temp.act_as('mt_edit2');
+  v := public.maps_line_add(v_e, 'flow', null, v_s, null, 'Next request');
+  perform pg_temp.expect_error(format('select public.maps_get(%L)', pg_temp.got('fpriv')), 'NOT_FOUND');
+  reset role;
+  perform pg_temp.act_as('mt_read');
+  perform pg_temp.check(public.maps_get(v_f) -> 'map' ->> 'right' = 'read', 'reader reads the flowchart');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', null, %L, null, null)', v_s, v_e), 'NO_RIGHT');
+  perform pg_temp.expect_error(format('select public.maps_branch_save(%L, 1, ''{"place":{"x":1,"y":1}}'')', v_s), 'NO_RIGHT');
+  perform pg_temp.expect_error('select public.maps_create(''Mine'', ''flowchart'', ''private'', null)', 'NO_RIGHT');
+  reset role;
+  perform pg_temp.act_as('mt_verify');
+  v := public.maps_verify(v_d, true, false);
+  perform pg_temp.check((select b ->> 'status' from jsonb_array_elements(public.maps_get(v_f) -> 'branches') b where (b ->> 'id')::uuid = v_d) = 'verified', 'step verified');
+  reset role;
+  perform pg_temp.act_as('mt_edit');
+  perform public.maps_line_save((select (l ->> 'id')::uuid from jsonb_array_elements(public.maps_get(v_f) -> 'lines') l where (l ->> 'from')::uuid = v_d and (l ->> 'to')::uuid = v_s), 1, null, 'Not standard');
+  perform pg_temp.check((select b ->> 'status' from jsonb_array_elements(public.maps_get(v_f) -> 'branches') b where (b ->> 'id')::uuid = v_d) = 'changed', 'a changed answer shows as changed since verified');
+  reset role;
+  delete from maps.maps where id in (v_f, pg_temp.got('fpriv')::uuid);   -- out of the way of the trash counts below
+end $$;
+
+-- ---------------------------------------------------------------- 004: the review list and "send back"
+do $$
+declare v jsonb; v_n uuid; v_fan uuid := pg_temp.got('b_fan')::uuid;
+begin
+  perform pg_temp.act_as('mt_edit');
+  perform pg_temp.expect_error('select public.maps_review()', 'NO_RIGHT');
+  perform pg_temp.expect_error(format('select public.maps_send_back(%L, ''why'')', v_fan), 'NO_RIGHT');
+  v_n := (public.maps_branch_add(pg_temp.got('b_root')::uuid, 'Damper section') ->> 'id')::uuid;   -- an editor's new branch: to verify
+  reset role;
+  perform pg_temp.act_as('mt_verify');
+  perform public.maps_verify(v_fan, true, false);
+  v := public.maps_review();
+  perform pg_temp.check(exists (select 1 from jsonb_array_elements(v -> 'items') i where (i ->> 'branch_id')::uuid = v_n and i ->> 'status' = 'to_verify'
+    and i ->> 'map' = 'Team AHU' and i ->> 'parent' = 'Team AHU' and i ->> 'updated_by' = 'Mt Edit'), 'review list: the new branch, its map and who changed it');
+  perform pg_temp.check(not exists (select 1 from jsonb_array_elements(v -> 'items') i where (i ->> 'map_id')::uuid = pg_temp.got('a')::uuid), 'review list: never a private map of another user');
+  perform pg_temp.check(not exists (select 1 from jsonb_array_elements(v -> 'items') i where (i ->> 'branch_id')::uuid = v_fan), 'review list: a verified branch is not in it');
+  v := public.maps_send_back(v_fan, '  Which fan curve? Add the reference.  ');
+  v := public.maps_get(pg_temp.got('b')::uuid);
+  perform pg_temp.check((select b ->> 'status' from jsonb_array_elements(v -> 'branches') b where (b ->> 'id')::uuid = v_fan) = 'to_verify', 'sent back: to verify again');
+  perform pg_temp.check((select b -> 'review' ->> 'note' from jsonb_array_elements(v -> 'branches') b where (b ->> 'id')::uuid = v_fan) = 'Which fan curve? Add the reference.', 'sent back: the comment, trimmed');
+  perform pg_temp.check((select b -> 'review' ->> 'by' from jsonb_array_elements(v -> 'branches') b where (b ->> 'id')::uuid = v_fan) = 'Mt Verify', 'sent back: by whom');
+  perform pg_temp.check(exists (select 1 from jsonb_array_elements(public.maps_review() -> 'items') i where (i ->> 'branch_id')::uuid = v_fan and i -> 'review' ->> 'note' like 'Which fan%'), 'sent back: in the review list with its comment');
+  perform pg_temp.expect_error(format('select public.maps_send_back(%L, ''  '')', v_fan), 'INVALID:comment');
+  perform pg_temp.expect_error(format('select public.maps_send_back(%L, %L)', v_fan, repeat('x', 501)), 'INVALID:comment');
+  perform pg_temp.expect_error(format('select public.maps_send_back(%L, ''why'')', pg_temp.got('b_root')), 'INVALID:branch');
+  perform pg_temp.expect_error(format('select public.maps_send_back(%L, ''why'')', pg_temp.got('x')), 'NOT_FOUND');
+  reset role;
+  -- the editor answers: the comment shows it was answered
+  perform pg_temp.act_as('mt_edit');
+  v := public.maps_branch_save(v_fan, (select (b ->> 'version')::integer from jsonb_array_elements(public.maps_get(pg_temp.got('b')::uuid) -> 'branches') b where (b ->> 'id')::uuid = v_fan),
+    '{"notes":"Fan curve: see the selection sheet."}');
+  perform pg_temp.check((v -> 'review' ->> 'answered')::boolean, 'changed after it was sent back: answered');
+  reset role;
+  -- the verifier verifies: the comment goes
+  perform pg_temp.act_as('mt_verify');
+  v := public.maps_verify(v_fan, true, false);
+  perform pg_temp.check((select b -> 'review' from jsonb_array_elements(public.maps_get(pg_temp.got('b')::uuid) -> 'branches') b where (b ->> 'id')::uuid = v_fan) = 'null'::jsonb, 'verified: the comment is cleared');
+  perform public.maps_verify(v_n, true, false);
+  reset role;
+  perform pg_temp.act_as('mt_none');
+  perform pg_temp.expect_error('select public.maps_review()', 'NO_ACCESS');
   reset role;
 end $$;
 

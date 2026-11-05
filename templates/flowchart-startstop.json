@@ -1,0 +1,185 @@
+{
+  "name": "Start / stop sequence",
+  "kind": "flowchart",
+  "about": "The order a piece of equipment starts and stops in, with its checks and waits (a pump, a fan, a unit). Generic steps only: rename, add and delete them for the real process. Everything it adds comes in \"to verify\".",
+  "items": [
+    {
+      "key": "s",
+      "title": "Start command",
+      "type": "start",
+      "notes": "Where the command comes from: the BMS, a schedule, a hand switch.",
+      "next": [
+        {
+          "to": "a"
+        }
+      ]
+    },
+    {
+      "key": "a",
+      "title": "Interlocks healthy?",
+      "type": "decision",
+      "notes": "Which interlocks: e.g. no trip, no fire alarm, the switch in Auto.",
+      "next": [
+        {
+          "to": "v",
+          "label": "Yes"
+        },
+        {
+          "to": "al",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "key": "v",
+      "title": "Open the valve or damper",
+      "type": "process",
+      "next": [
+        {
+          "to": "w1"
+        }
+      ]
+    },
+    {
+      "key": "w1",
+      "title": "Wait for the end switch",
+      "type": "delay",
+      "notes": "How long to wait before it counts as a fault.",
+      "next": [
+        {
+          "to": "fb"
+        }
+      ]
+    },
+    {
+      "key": "fb",
+      "title": "End switch made in time?",
+      "type": "decision",
+      "next": [
+        {
+          "to": "m",
+          "label": "Yes"
+        },
+        {
+          "to": "al",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "key": "m",
+      "title": "Start the motor",
+      "type": "process",
+      "next": [
+        {
+          "to": "w2"
+        }
+      ]
+    },
+    {
+      "key": "w2",
+      "title": "Wait for proof of run",
+      "type": "delay",
+      "next": [
+        {
+          "to": "pr"
+        }
+      ]
+    },
+    {
+      "key": "pr",
+      "title": "Proof of run (flow, pressure or current)?",
+      "type": "decision",
+      "next": [
+        {
+          "to": "run",
+          "label": "Yes"
+        },
+        {
+          "to": "st",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "key": "st",
+      "title": "Stop and raise an alarm",
+      "type": "process",
+      "next": [
+        {
+          "to": "e1"
+        }
+      ]
+    },
+    {
+      "key": "al",
+      "title": "Raise an alarm, do not start",
+      "type": "process",
+      "next": [
+        {
+          "to": "e1"
+        }
+      ]
+    },
+    {
+      "key": "e1",
+      "title": "Not running",
+      "type": "end"
+    },
+    {
+      "key": "run",
+      "title": "Running: control to the set point",
+      "type": "process",
+      "next": [
+        {
+          "to": "sc"
+        }
+      ]
+    },
+    {
+      "key": "sc",
+      "title": "Stop command",
+      "type": "data",
+      "next": [
+        {
+          "to": "sd"
+        }
+      ]
+    },
+    {
+      "key": "sd",
+      "title": "Stop the motor",
+      "type": "process",
+      "next": [
+        {
+          "to": "w3"
+        }
+      ]
+    },
+    {
+      "key": "w3",
+      "title": "Run-on time",
+      "type": "delay",
+      "next": [
+        {
+          "to": "cl"
+        }
+      ]
+    },
+    {
+      "key": "cl",
+      "title": "Close the valve or damper",
+      "type": "process",
+      "next": [
+        {
+          "to": "e"
+        }
+      ]
+    },
+    {
+      "key": "e",
+      "title": "Stopped",
+      "type": "end"
+    }
+  ]
+}

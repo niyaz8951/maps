@@ -233,6 +233,150 @@ svg path.mpx.x-see { stroke-dasharray: 0.1 6; stroke-width: 2; opacity: .75; }
 .mp-trow:last-child { border-bottom: 0; }
 .mp-io-text { width: 100%; min-height: 240px; font-family: var(--mono); font-size: 0.87rem; line-height: 1.5; white-space: pre; overflow-wrap: normal; overflow: auto; }
 
+/* ---------- flowcharts (step 3): steps in ISO 5807 shapes, lanes, arrows with answers ---------- */
+.mp-stage > svg.fc-svg { position: absolute; inset: 0; pointer-events: none; overflow: visible; font-family: var(--font); }
+.fc-svg .fc-step, .fc-svg .fc-lab, .fc-svg .fc-handle { pointer-events: all; }
+.fc-lane-bg { fill: var(--accent); fill-opacity: .035; stroke: var(--line); stroke-width: 1; }
+.fc-lane-bg.odd { fill-opacity: .07; }
+.fc-lane-head { fill: var(--accent-soft); }
+.fc-lane-t { fill: var(--accent-strong); font-size: 13px; font-weight: 750; letter-spacing: .01em; }
+.fc-edge { fill: none; stroke: var(--text-2); stroke-width: 1.6; stroke-linejoin: round; }
+.fc-edge.back { stroke-dasharray: 6 4; }
+.fc-edge.on { stroke: var(--accent); stroke-width: 2.8; stroke-dasharray: none; }
+.fc-edge.fc-ghost { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
+.fc-mk path { fill: var(--text-2); }
+.fc-mk.on path { fill: var(--accent); }
+.fc-lab { fill: var(--text); font-size: 12px; font-weight: 700; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; cursor: pointer; }
+.fc-lab:hover { fill: var(--link); }
+.fc-lab.on { fill: var(--accent-strong); }
+.fc-step { cursor: pointer; outline: none; transition: opacity .2s var(--ease); }
+.fc-shape { fill: var(--surface); stroke: var(--accent); stroke-width: 1.6; transition: fill .15s var(--ease); }
+.fc-start .fc-shape, .fc-end .fc-shape { fill: var(--accent-soft); }
+.fc-connector .fc-shape { fill: var(--surface-2); }
+.fc-inner { fill: none; }
+.fc-t { fill: var(--text); font-size: 13px; font-weight: 600; pointer-events: none; }
+.fc-step:hover .fc-shape { fill: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.fc-step:focus-visible .fc-shape { stroke: var(--focus); stroke-width: 3.5; }
+.fc-step.fc-unv .fc-shape, .fc-step.fc-chg .fc-shape { stroke: var(--warning); stroke-dasharray: 6 4; }
+.fc-step.fc-warning .fc-shape { stroke: var(--warning); stroke-width: 2.4; stroke-dasharray: none; }
+.fc-step.fc-error .fc-shape { stroke: var(--danger); stroke-width: 2.6; stroke-dasharray: none; }
+.fc-step.fc-sel .fc-shape { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 3; stroke-dasharray: none; }
+.fc-step.fc-drag { cursor: move; }
+.fc-step.fc-moving { opacity: .8; }
+.fc-step.fc-dim { opacity: .3; }
+.fc-step.fc-hit .fc-shape { fill: var(--warning-soft); }
+.fc-step.fc-off { opacity: .32; }
+.fc-step.fc-on .fc-shape { stroke-width: 2.6; }
+.fc-step.fc-here .fc-shape { fill: var(--accent-soft); stroke-width: 3.6; stroke-dasharray: none; }
+.fc-mark circle { stroke-width: 1.2; }
+.fc-mark text { font-size: 10px; font-weight: 800; pointer-events: none; }
+.fc-mnote circle { fill: var(--surface-2); stroke: var(--line-strong); } .fc-mnote text { fill: var(--text-2); }
+.fc-msp circle { fill: var(--success-soft); stroke: var(--success); } .fc-msp text { fill: var(--success); }
+.fc-handle { cursor: crosshair; }
+.fc-handle circle { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.fc-handle path { stroke: var(--on-accent); stroke-width: 2; stroke-linecap: round; }
+.fc-handle:hover circle { fill: var(--accent-strong); }
+.fc-empty { position: absolute; left: 30px; top: 30px; width: max-content; max-width: 420px; padding: 14px 16px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text-2); font-size: 0.93rem; }
+.fc-empty b { color: var(--text); }
+
+/* the bar over the chart: add, lanes, auto layout, check, walk through, ways through */
+.fc-bar { display: flex; flex-direction: column; gap: 8px; margin: 0 0 8px; }
+.fc-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.fc-okbtn { color: var(--success); }
+.fc-warnbtn { color: var(--warning); border-color: var(--warning); }
+.fc-checks { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.fc-issue { display: flex; gap: 8px; align-items: center; font-size: 0.92rem; }
+.fc-issue .badge { flex: none; }
+.fc-ok { margin: 0; color: var(--success); font-weight: 600; font-size: 0.92rem; }
+.fc-walk { display: grid; gap: 8px; padding: 12px 14px; border-left: 3px solid var(--accent); }
+.fc-walk-h { display: flex; flex-direction: column; gap: 2px; }
+.fc-walk-h b { font-size: 1.1rem; }
+.fc-walk-n { margin: 0; white-space: pre-wrap; color: var(--text-2); font-size: 0.93rem; max-height: 8.5em; overflow: auto; }
+.fc-walk-to { font-weight: 700; }
+.fc-way { display: block; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 0.92rem; line-height: 1.6; }
+.fc-way:last-child { border-bottom: 0; }
+.fc-way > b { margin-right: 6px; color: var(--text-2); }
+.fc-way-s { font-weight: 600; }
+.fc-way-a { color: var(--text-2); }
+.fc-way.loop .fc-way-a:last-child { color: var(--accent-strong); font-weight: 600; }
+.fc-warnline { margin: 2px 0 0; color: var(--warning); font-size: 0.88rem; }
+
+/* the step panel and the outline of a flowchart */
+.fc-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 560px; }
+.fc-pair .field { margin: 0; }
+.fc-ans-in { width: 150px; flex: none; }
+.fc-ans { flex: none; min-width: 60px; font-size: 0.9rem; }
+.fc-arr { color: var(--text-2); font-weight: 700; }
+.fc-chip { display: inline-block; flex: none; padding: 1px 9px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--line); }
+.fc-c-start, .fc-c-end { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
+.fc-c-decision { background: var(--warning-soft); color: var(--text); border-color: transparent; }
+.fc-c-data, .fc-c-document { background: var(--brand-soft); color: var(--text); border-color: transparent; }
+.fc-c-subprocess, .fc-c-manual, .fc-c-delay { background: var(--success-soft); color: var(--text); border-color: transparent; }
+.fc-out { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; counter-reset: fcstep; }
+.fc-orow { display: grid; gap: 3px; padding: 9px 12px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--surface); cursor: pointer; scroll-margin-top: 84px; }
+.fc-orow:hover { background: var(--surface-2); }
+.fc-orow:focus-visible { outline: none; box-shadow: var(--accent-ring); }
+.fc-orow.mp-sel { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.fc-orow.mp-unv { border-left-style: dashed; border-left-color: var(--warning); }
+.fc-orow.fc-error { border-color: var(--danger); }
+.fc-orow.fc-warning { border-color: var(--warning); }
+.fc-orow.mp-dim { opacity: .35; }
+.fc-orow-h { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.fc-orow-h::before { counter-increment: fcstep; content: counter(fcstep) "."; color: var(--text-3); font-size: 0.85rem; font-variant-numeric: tabular-nums; min-width: 1.6em; }
+.fc-orow-h b { overflow-wrap: anywhere; }
+.fc-orow > .faint { padding-left: 2.1em; font-size: 0.85rem; }
+.fc-exits { list-style: none; margin: 0; padding: 0 0 0 2.1em; display: grid; gap: 1px; font-size: 0.9rem; }
+.fc-go { font: inherit; font-weight: 600; border: 0; background: none; color: var(--link); cursor: pointer; padding: 0; text-align: left; }
+.fc-go:hover { text-decoration: underline; }
+.fc-lanelist { display: grid; gap: 2px; }
+.fc-lanerow { display: flex; gap: 4px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.fc-lanerow:last-child { border-bottom: 0; }
+
+/* ---------- print: a flowchart (A4 / A3 landscape) or an outline (A4) ---------- */
+#mp-print { display: none; }
+@media print {
+  html.mp-printing, html.mp-printing body { background: none; }
+  html.mp-printing body > *:not(#mp-print) { display: none !important; }
+  html.mp-printing #mp-print { display: block; color: var(--text); }
+  .mp-print.a4 { page: fc-a4; }
+  .mp-print.a3 { page: fc-a3; }
+  .mp-print.a4p { page: fc-a4p; }
+  .mp-print h1 { font-size: 16pt; margin: 0 0 2mm; }
+  .mp-print-sub { font-size: 9pt; color: var(--text-2); margin: 0 0 4mm; }
+  .mp-print-svg { display: block; width: 100%; height: auto; }
+  .mp-print.a4 .mp-print-svg { max-height: 170mm; }
+  .mp-print.a3 .mp-print-svg { max-height: 255mm; }
+}
+@page fc-a4 { size: A4 landscape; margin: 10mm; }
+@page fc-a3 { size: A3 landscape; margin: 10mm; }
+@page fc-a4p { size: A4 portrait; margin: 14mm 14mm 16mm; }
+
+/* ---------- step 2: review list, sent back, links from other maps, outline print ---------- */
+.mp-review { gap: 6px; }
+.mp-review .section-title { margin: 10px 0 0; }
+.mp-rrow { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.mp-rtitle { font-weight: 650; overflow-wrap: anywhere; }
+.mp-rnotes { margin: 4px 0 0; font-size: 0.88rem; color: var(--text-2); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mp-rback { margin: 6px 0 0; padding: 6px 10px; border-left: 3px solid var(--warning); background: var(--warning-soft); border-radius: 0 8px 8px 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+.mp-racts { display: flex; gap: 6px; flex: none; }
+.mp-back-note { display: block; overflow-wrap: anywhere; }
+.mp-back-note .faint { margin-top: 2px; font-size: 0.85rem; }
+.mp-lf { font-size: 0.75rem; font-weight: 700; color: var(--link); white-space: nowrap; align-self: center; }
+.mp-root .mp-lf { color: var(--on-accent); }
+@media print {
+  .mp-print.outline h1 { font-size: 18pt; }
+  .mp-print.outline .pr-b { break-inside: avoid-page; margin: 0 0 3mm; }
+  .mp-print.outline h2 { font-size: 13pt; margin: 4mm 0 1mm; border-bottom: 1px solid var(--line); padding-bottom: 1mm; }
+  .mp-print.outline h3 { font-size: 11pt; margin: 2mm 0 1mm; }
+  .mp-print.outline .pr-st { font-size: 8.5pt; font-weight: 500; color: var(--warning); }
+  .mp-print.outline .pr-notes { margin: 0 0 1mm; font-size: 10pt; line-height: 1.45; white-space: pre-wrap; }
+  .mp-print.outline .pr-sp, .mp-print.outline .pr-links { margin: 0 0 1mm; padding-left: 5mm; font-size: 9.5pt; }
+  .mp-print.outline .pr-sp li::marker { content: "! "; font-weight: 800; }
+  .mp-print.outline .pr-d2 { margin-left: 5mm; } .mp-print.outline .pr-d3 { margin-left: 10mm; } .mp-print.outline .pr-d4 { margin-left: 15mm; }
+  .mp-print.outline .pr-d5, .mp-print.outline .pr-d6 { margin-left: 20mm; }
+}
+
 /* ---------- phones ---------- */
 @media (max-width: 640px) {
   .mp-head h1 { font-size: 1.5rem; }
@@ -252,4 +396,8 @@ svg path.mpx.x-see { stroke-dasharray: 0.1 6; stroke-width: 2; opacity: .75; }
   .mp-drow { grid-template-columns: 1fr; gap: 2px; }
   .mp-linkrow { flex-wrap: wrap; }
   .mp-linkrow .mp-relsel { flex: 1; }
+  .fc-pair { grid-template-columns: 1fr; }
+  .fc-ans-in { width: 100%; flex: 1 1 100%; }
+  .fc-tools .btn { flex: 1 1 auto; }
+  .mp-rrow { flex-direction: column; gap: 6px; }
 }

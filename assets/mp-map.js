@@ -31,7 +31,11 @@
     if (n.notes) out.push(el('button', { type: 'button', class: 'mp-nb', title: 'Read the notes', 'aria-label': 'Read the notes of ' + n.title, 'data-act': 'note' }, MP.ico('note')));
     if (n.special.length && !st.special) out.push(el('span', { class: 'mp-sp', title: n.special.join('\n') }, el('i', { text: '!' }), String(n.special.length)));
     if (outLinks) out.push(el('span', { class: 'mp-lk', title: MP.plural(outLinks, 'link') }, MP.ico('link')));
-    if (n.id !== st.focus && n.status === 'to_verify') out.push(el('span', { class: 'mp-tv', title: 'To verify: not checked yet', text: 'to verify' }));
+    var fromOther = MP.linesTo(n.id).filter(function (l) { return l.kind === 'link' && l.other; });
+    if (fromOther.length) out.push(el('span', { class: 'mp-lf', title: 'Linked from another map: ' + fromOther.map(function (l) { return l.other.title + ' (' + l.other.map + ')'; }).join(', '),
+      text: '← ' + fromOther.length }));
+    if (n.id !== st.focus && n.review) out.push(el('span', { class: 'mp-tv', title: 'Sent back: ' + n.review.note, text: 'sent back' }));
+    else if (n.id !== st.focus && n.status === 'to_verify') out.push(el('span', { class: 'mp-tv', title: 'To verify: not checked yet', text: 'to verify' }));
     if (n.id !== st.focus && n.status === 'changed') out.push(el('span', { class: 'mp-tv', title: 'Changed since it was verified', text: 'changed' }));
     if (n.id !== st.focus && n.kids.length)
       out.push(el('button', { type: 'button', class: 'mp-al', title: 'Show this branch alone', 'aria-label': 'Show ' + n.title + ' alone', 'data-act': 'alone' }, MP.ico('focus')));

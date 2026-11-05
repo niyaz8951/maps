@@ -1,0 +1,22 @@
+{
+  "name": "Blank flowchart",
+  "kind": "flowchart",
+  "about": "A Start and an End joined by an arrow, to build between. Generic steps only: rename, add and delete them for the real process. Everything it adds comes in \"to verify\".",
+  "items": [
+    {
+      "key": "s",
+      "title": "Start",
+      "type": "start",
+      "next": [
+        {
+          "to": "e"
+        }
+      ]
+    },
+    {
+      "key": "e",
+      "title": "End",
+      "type": "end"
+    }
+  ]
+}

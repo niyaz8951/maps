@@ -9,7 +9,9 @@ dev/test/db.sh
 psql $PGARGS -q -v ON_ERROR_STOP=1 -f dev/test/seed-local.sql
 psql $PGARGS -qc "update core.tiles set accent = 'rose' where id = 'maps'"
 node dev/outline-check.mjs | tail -1
+node dev/flowchart-check.mjs | tail -1
 node dev/test/mock.mjs > /dev/null 2>&1 & MOCK=$!
 sleep 1
 node dev/test/e2e.cjs || true
+node dev/test/e2e-flow.cjs || true
 kill $MOCK

@@ -1,0 +1,56 @@
+{
+  "name": "Equipment selection",
+  "about": "Starter for how one kind of equipment is chosen for a job. Generic headings only: rename, delete and fill them. Everything it adds comes in \"to verify\".",
+  "items": [
+    {
+      "depth": 0,
+      "title": "Inputs",
+      "notes": "What the selection needs from the job: duties, conditions, space, power, noise, budget, and where each one comes from."
+    },
+    {
+      "depth": 0,
+      "title": "Rules",
+      "notes": "The limits and rules of thumb that decide a selection, each with its unit and where it comes from."
+    },
+    {
+      "depth": 0,
+      "title": "Steps",
+      "notes": "The selection in order, one branch per step.",
+      "props": {
+        "layout": "columns"
+      }
+    },
+    {
+      "depth": 1,
+      "title": "Step 1"
+    },
+    {
+      "depth": 1,
+      "title": "Step 2"
+    },
+    {
+      "depth": 1,
+      "title": "Step 3"
+    },
+    {
+      "depth": 0,
+      "title": "Software and tools",
+      "notes": "The selection software or calculator used, its version, and what to check in its results."
+    },
+    {
+      "depth": 0,
+      "title": "Options that change the selection",
+      "notes": "Options that change capacity, size, weight, power or noise, and by how much."
+    },
+    {
+      "depth": 0,
+      "title": "Checks before quoting",
+      "notes": "What to check before the selection goes to the customer."
+    },
+    {
+      "depth": 0,
+      "title": "Common mistakes",
+      "notes": "Mistakes seen in selections, one branch each, with how to avoid them."
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "name": "Approval flow",
+  "kind": "flowchart",
+  "about": "A request checked by a reviewer and approved or refused by an approver, with rework when it is not complete. Generic steps only: rename, add and delete them for the real process. Everything it adds comes in \"to verify\".",
+  "items": [
+    {
+      "key": "s",
+      "title": "Request raised",
+      "type": "start",
+      "props": {
+        "lane": "Requester"
+      },
+      "next": [
+        {
+          "to": "f"
+        }
+      ]
+    },
+    {
+      "key": "f",
+      "title": "Fill in the request",
+      "type": "data",
+      "props": {
+        "lane": "Requester"
+      },
+      "notes": "What the request must hold: the need, the quantities, the dates, the cost and the documents attached.",
+      "next": [
+        {
+          "to": "r"
+        }
+      ]
+    },
+    {
+      "key": "r",
+      "title": "Review the request",
+      "type": "process",
+      "props": {
+        "lane": "Reviewer"
+      },
+      "notes": "What the reviewer checks, against which rules or limits.",
+      "next": [
+        {
+          "to": "c"
+        }
+      ]
+    },
+    {
+      "key": "c",
+      "title": "Complete and correct?",
+      "type": "decision",
+      "props": {
+        "lane": "Reviewer"
+      },
+      "next": [
+        {
+          "to": "a",
+          "label": "Yes"
+        },
+        {
+          "to": "b",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "key": "b",
+      "title": "Return with comments",
+      "type": "process",
+      "props": {
+        "lane": "Reviewer"
+      },
+      "notes": "Say exactly what is missing or wrong.",
+      "next": [
+        {
+          "to": "f"
+        }
+      ]
+    },
+    {
+      "key": "a",
+      "title": "Approve?",
+      "type": "decision",
+      "props": {
+        "lane": "Approver"
+      },
+      "notes": "Who may approve, and up to which value.",
+      "next": [
+        {
+          "to": "o",
+          "label": "Yes"
+        },
+        {
+          "to": "x",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "key": "o",
+      "title": "Record the approval",
+      "type": "document",
+      "props": {
+        "lane": "Approver"
+      },
+      "notes": "Where the approval is recorded and who is told.",
+      "next": [
+        {
+          "to": "e"
+        }
+      ]
+    },
+    {
+      "key": "x",
+      "title": "Tell the requester why not",
+      "type": "process",
+      "props": {
+        "lane": "Approver"
+      },
+      "next": [
+        {
+          "to": "e2"
+        }
+      ]
+    },
+    {
+      "key": "e",
+      "title": "Approved",
+      "type": "end",
+      "props": {
+        "lane": "Requester"
+      }
+    },
+    {
+      "key": "e2",
+      "title": "Not approved",
+      "type": "end",
+      "props": {
+        "lane": "Requester"
+      }
+    }
+  ],
+  "lanes": [
+    "Requester",
+    "Reviewer",
+    "Approver"
+  ]
+}

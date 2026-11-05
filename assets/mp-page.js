@@ -8,7 +8,7 @@
   function head() {
     var m = MP.M.map;
     $('mp-title').textContent = m.name; Core.setTitle(m.name + ' - Maps');
-    $('mp-sub').textContent = [MP.KIND[m.kind] + ' map', m.mine ? 'yours' : 'by ' + m.owner, MP.SHARE[m.share], m.right === 'read' ? 'you can read it' : null,
+    $('mp-sub').textContent = [MP.KIND[m.kind] + (m.kind === 'flowchart' ? '' : ' map'), m.mine ? 'yours' : 'by ' + m.owner, MP.SHARE[m.share], m.right === 'read' ? 'you can read it' : null,
       'changed ' + Core.date(m.updated_at) + (m.updated_by ? ' by ' + m.updated_by : '')].filter(Boolean).join(' · ');
     $('mp-mode').hidden = !MP.canEdit();
     $('mp-import').hidden = !(MP.canEdit() && st.edit);
@@ -25,7 +25,7 @@
     if (p.length > 1) c.appendChild(el('button', { type: 'button', class: 'btn ghost small', text: 'Whole map', on: { click: function () { focusOn(MP.M.root); } } }));
   }
   function pills() {
-    var b = 0, s = 0, tv = 0, ch = 0, hits = 0, first = null, p = $('mp-pills');
+    var b = 0, s = 0, tv = 0, ch = 0, hits = 0, first = null, p = $('mp-pills'), flow = MP.isFlow();
     MP.each(MP.M.root, function (n) {
       b++; s += n.special.length;
       if (n.id !== MP.M.root && n.status === 'to_verify') { tv++; first = first || n.id; }
@@ -34,7 +34,8 @@
     if (st.q) MP.each(st.focus, function (n) { if (MP.matches(n)) hits++; });
     Core.clear(p);
     if (st.q) p.appendChild(el('span', { class: 'badge accent', text: hits + ' found' }));
-    p.appendChild(el('span', { class: 'badge', text: MP.plural(b - 1, 'branch', 'branches') }));
+    p.appendChild(el('span', { class: 'badge', text: flow ? MP.plural(b - 1, 'step') : MP.plural(b - 1, 'branch', 'branches') }));
+    if (flow) p.appendChild(el('span', { class: 'badge', text: MP.plural(MP.M.lines.filter(function (l) { return l.kind === 'flow' && N(l.from) && N(l.to); }).length, 'arrow') }));
     if (s) p.appendChild(el('span', { class: 'badge', text: MP.plural(s, 'special note') }));
     if (tv || ch) p.appendChild(el('button', { type: 'button', class: 'badge warning mp-badgebtn', title: 'Show the first one',
       text: [tv ? tv + ' to verify' : null, ch ? ch + ' changed since verified' : null].filter(Boolean).join(' · '),
@@ -46,20 +47,25 @@
   var queued = false;
   function renderView() {
     crumbs(); pills();
-    var map = st.view === 'map';
+    var map = st.view === 'map', flow = MP.isFlow();
+    $('mp-special').hidden = flow;
     $('mp-canvas').hidden = !map; $('mp-outline').hidden = map; $('mp-tools').hidden = !map;
     $('mp-view-map').setAttribute('aria-selected', map ? 'true' : 'false'); $('mp-view-out').setAttribute('aria-selected', map ? 'false' : 'true');
     $('mp-read').setAttribute('aria-selected', st.edit ? 'false' : 'true'); $('mp-edit').setAttribute('aria-selected', st.edit ? 'true' : 'false');
     $('mp-special').setAttribute('aria-pressed', st.special ? 'true' : 'false');
-    var anyX = MP.linkIndex().list.length + MP.linkIndex().out.length > 0;
+    var anyX = !flow && MP.linkIndex().list.length + MP.linkIndex().out.length > 0;
     $('mp-xlinks').hidden = !anyX;
     $('mp-xlinks').setAttribute('aria-pressed', anyX && st.xlinks !== 'off' ? 'true' : 'false');
     $('mp-xlinks-txt').textContent = 'Links: ' + st.xlinks;
     MP.mapView.legend(map && anyX && st.xlinks !== 'off');
     var touch = MP.coarse();
-    $('mp-hint').textContent = touch ? 'Tap a branch to open it, tap it again to read it' + (map ? ' · two fingers to move' : '')
+    if (flow) $('mp-hint').textContent = touch ? 'Tap a step to choose it, tap it again to read it' + (map ? ' · two fingers to move' : '')
+      : 'Click a step to choose it · double-click to read it' + (map ? (MP.editing() ? ' · drag a step to place it · drag the + under it to draw an arrow · Tab adds the next step' : ' · drag to move · Ctrl + wheel to zoom') : '');
+    else $('mp-hint').textContent = touch ? 'Tap a branch to open it, tap it again to read it' + (map ? ' · two fingers to move' : '')
       : 'Click a branch to open it · double-click to read it' + (map ? ' · drag to move · Ctrl + wheel to zoom' : '') + (MP.editing() && !MP.phone() ? ' · Tab adds a branch' : '');
-    if (map) MP.mapView.render(); else MP.outline.render();
+    $('fc-bar').hidden = !flow;
+    if (map) { if (flow) MP.chart.render(); else MP.mapView.render(); }
+    else if (flow) MP.chart.outline(); else MP.outline.render();
     MP.saveOpen();
   }
   function soon() {                       // while typing a name: one redraw per frame
@@ -67,12 +73,13 @@
     window.requestAnimationFrame(function () { queued = false; renderView(); });
   }
   function render() { renderView(); MP.editor.render(); }
-  function setView(v) { st.view = v; MP.mapView.redraw(); MP.store('view', v); MP.view.wantScroll = true; renderView(); }
+  function setView(v) { st.view = v; MP.mapView.redraw(); MP.chart.redraw(); MP.store('view', v); MP.view.wantScroll = true; renderView(); }
   function setEdit(on, quiet) {
     if (!MP.canEdit()) return;
     MP.flush();
     st.edit = on; head(); render();
-    if (on && !quiet) Core.toast(MP.coarse() ? 'Edit is on. Tap a branch, then tap it again to change it.' : 'Edit is on. Double-click a branch to write in it; Tab adds a branch under the chosen one.');
+    if (on && !quiet) Core.toast(MP.isFlow() ? (MP.coarse() ? 'Edit is on. Tap a step, then tap it again to change it.' : 'Edit is on. Drag steps to place them; drag the + under a step to draw an arrow; Tab adds the next step.')
+      : MP.coarse() ? 'Edit is on. Tap a branch, then tap it again to change it.' : 'Edit is on. Double-click a branch to write in it; Tab adds a branch under the chosen one.');
   }
 
   // ---------- moving around ----------
@@ -167,6 +174,7 @@
   // a click on a branch, on the map or in the outline. The second click of a double-click does nothing here.
   var lastClick = { id: null, t: 0, closed: false };
   function click(e, onMap) {
+    if (MP.isFlow()) { MP.chart.click(e); return; }
     if (e.detail > 1) return;
     if (e.target.closest && e.target.closest('.mp-peek, .mp-xl')) return;
     var nodeE = e.target.closest ? e.target.closest('[data-node]') : null;
@@ -198,6 +206,7 @@
   }
   function key(e, n) {
     if (!n) return;
+    if (MP.isFlow() && MP.chart.key(e, n)) return;
     var vis = MP.visible(), i = vis.indexOf(n.id), go = null, E = MP.editing() && !(MP.phone() && st.view === 'map');
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); MP.editor.open(n.id); return; }
     if (e.key === 'ArrowDown') go = vis[i + 1];
@@ -213,6 +222,7 @@
   }
   function pageKeys(e) {
     if (!MP.M || st.note || document.querySelector('.sheet-back')) return;
+    if (e.key === 'Escape' && st.walk && !st.full) { e.preventDefault(); MP.chart.stopWalk(); return; }
     if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
     var map = st.view === 'map';
     if ((e.key === '+' || e.key === '=') && map) { e.preventDefault(); MP.mapView.zoomBy(1.2); }
@@ -294,7 +304,7 @@
     var z = parseFloat(MP.store('zoom:' + MP.M.map.id)); if (z >= 0.3 && z <= 2) st.zoom = z;
     st.special = MP.store('special') === '1';
     var xl = MP.store('xlinks'); if (xl === 'all' || xl === 'off' || xl === 'chosen') st.xlinks = xl;
-    if (MP.canEdit() && MP.store('edit-next') === MP.M.map.id) { st.edit = true; st.sel = MP.M.root; }
+    if (MP.canEdit() && MP.store('edit-next') === MP.M.map.id) { st.edit = true; st.sel = MP.isFlow() ? null : MP.M.root; }
     MP.store('edit-next', null);
     $('mp-view-map').addEventListener('click', function () { setView('map'); });
     $('mp-view-out').addEventListener('click', function () { setView('outline'); });
@@ -323,7 +333,7 @@
     window.addEventListener('hashchange', function () { applyHash(false); render(); });
     window.addEventListener('beforeunload', function (e) { if (MP.pending()) { MP.flush(); e.preventDefault(); e.returnValue = ''; } });
     document.addEventListener('keydown', pageKeys);
-    MP.mapView.wire(); MP.outline.wire(); MP.editor.wire();
+    MP.mapView.wire(); MP.outline.wire(); MP.editor.wire(); MP.chart.wire();
   }
 
   // ---------- start: the guard first ----------

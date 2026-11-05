@@ -55,11 +55,19 @@
   // ---------- links ----------
   function lineText(l, from) {
     if (l.kind === 'web') { var host = ''; try { host = new URL(l.target).hostname.replace(/^www\./, ''); } catch (e) { host = 'Web'; } return host; }
+    if (l.kind === 'tile') return 'DAME · ' + String(l.target || '').split('/')[0];
+    if (l.kind === 'flow') return from ? 'Arrow to' : 'Arrow from';
     var r = MP.rel(l.rel);
     return (from ? r.label : r.back) + (l.other ? ' · ' + l.other.map : '');
   }
   function lineNode(l, fromHere) {
     var far = fromHere ? l.to : l.from, title;
+    if (l.kind === 'tile') {
+      // a page of another tile, on this site: /<tile-id>/<path>, never a full address
+      if (!/^[a-z][a-z0-9-]{1,30}(\/[A-Za-z0-9._~%\/?=&#+-]*)?$/.test(l.target || '') || /\.\.|\/\//.test(l.target)) return el('span', { class: 'mp-link', text: l.label || 'Tile link' });
+      return el('a', { class: 'mp-link', href: '/' + l.target + (l.target.indexOf('/') < 0 ? '/' : '') }, MP.ico('link'),
+        el('span', { class: 't', text: l.label || l.target }), el('small', { text: lineText(l, true) }));
+    }
     if (l.kind === 'web') {
       if (!/^https:\/\/[^\s<>"']+$/i.test(l.target || '')) return el('span', { class: 'mp-link', text: l.label || 'Web link' });
       return el('a', { class: 'mp-link', href: l.target, target: '_blank', rel: 'noopener noreferrer' }, MP.ico('link'),
@@ -73,9 +81,15 @@
   function relOptions() { return MP.RELS.map(function (r) { return el('option', { value: r.id, text: r.label }); }); }
 
   // ---------- what changed since it was verified ----------
-  function lineWords(x) { return x.kind === 'web' ? 'Web link: ' + (x.label || x.target) : MP.rel(x.rel).label + ': ' + (x.to_title || 'a branch') + (x.label ? ' ("' + x.label + '")' : ''); }
+  function lineWords(x) {
+    if (x.kind === 'web') return 'Web link: ' + (x.label || x.target);
+    if (x.kind === 'tile') return 'Tile link: ' + (x.label || x.target);
+    if (x.kind === 'flow') return 'Arrow to ' + (x.to_title || 'a step') + (x.label ? ' ("' + x.label + '")' : '');
+    return MP.rel(x.rel).label + ': ' + (x.to_title || 'a branch') + (x.label ? ' ("' + x.label + '")' : '');
+  }
+  MP.lineWords = lineWords;
   function nowFact(n) {
-    return { title: n.title, notes: n.notes, special: n.special, props: n.props,
+    return { title: n.title, notes: n.notes, special: n.special, props: n.props, type: n.type,
       lines: MP.linesFrom(n.id).map(function (l) { return { kind: l.kind, rel: l.rel, label: l.label, target: l.target, to_title: N(l.to) ? N(l.to).title : l.other ? l.other.title : '' }; }) };
   }
   // lines of text: kept, removed (-), added (+), by the longest common run (notes are at most 8000 characters)
@@ -110,7 +124,9 @@
     var gone = ws.filter(function (s) { return ns.indexOf(s) < 0; }), added = ns.filter(function (s) { return ws.indexOf(s) < 0; });
     if (gone.length || added.length) row('Special notes', el('div', {}, gone.map(function (s) { return el('div', { class: 'mp-del', text: '- ' + s }); }),
       added.map(function (s) { return el('div', { class: 'mp-ins', text: '+ ' + s }); })));
-    if (((was.props || {}).layout || 'tree') !== ((now.props || {}).layout || 'tree')) row('Layout', el('span', { text: ((was.props || {}).layout || 'tree') + ' → ' + ((now.props || {}).layout || 'tree') }));
+    if (MP.isFlow() && (was.type || 'process') !== (now.type || 'process')) row('Shape', el('span', {}, el('del', { text: MP.SHAPE_NAME[was.type] || was.type }), ' → ', el('ins', { text: MP.SHAPE_NAME[now.type] || now.type })));
+    if (MP.isFlow() && ((was.props || {}).lane || '') !== ((now.props || {}).lane || '')) row('Lane', el('span', { text: ((was.props || {}).lane || 'No lane') + ' → ' + ((now.props || {}).lane || 'No lane') }));
+    if (!MP.isFlow() && ((was.props || {}).layout || 'tree') !== ((now.props || {}).layout || 'tree')) row('Layout', el('span', { text: ((was.props || {}).layout || 'tree') + ' → ' + ((now.props || {}).layout || 'tree') }));
     var wl = (was.lines || []).map(lineWords), nl = now.lines.map(lineWords);
     var lg = wl.filter(function (s) { return nl.indexOf(s) < 0; }), la = nl.filter(function (s) { return wl.indexOf(s) < 0; });
     if (lg.length || la.length) row('Links', el('div', {}, lg.map(function (s) { return el('div', { class: 'mp-del', text: '- ' + s }); }),
@@ -169,11 +185,15 @@
     // verification
     var word = MP.statusWord(n);
     box.appendChild(el('div', { class: 'row mp-nstate' },
-      isRoot ? el('span', { class: 'badge', text: MP.KIND[MP.M.map.kind] + ' map' }) :
+      isRoot ? el('span', { class: 'badge', text: MP.KIND[MP.M.map.kind] + (MP.isFlow() ? '' : ' map') }) :
         el('span', { class: 'badge ' + (n.status === 'verified' ? 'success' : 'warning'), text: word }),
       !isRoot && n.status !== 'to_verify' && n.verified_by ? el('span', { class: 'faint', text: 'verified by ' + n.verified_by + (n.verified_at ? ', ' + Core.date(n.verified_at) : '') }) : null,
       E && !clashed ? el('span', { class: 'mp-status', id: 'mp-status', role: 'status' }) : null));
     if (E && lastMsg.id === n.id && lastMsg.text) status(lastMsg.text, lastMsg.bad);
+    if (!isRoot && n.review) {
+      box.appendChild(el('div', { class: 'notice warning mp-back-note' }, el('b', { text: 'Sent back' + (n.review.by ? ' by ' + n.review.by : '') + (n.review.at ? ', ' + Core.date(n.review.at) : '') + ': ' }),
+        el('span', { text: n.review.note }), el('div', { class: 'faint', text: n.review.answered ? 'Changed since: a verifier can verify it now.' : 'Not changed yet.' })));
+    }
     if (!isRoot && n.status === 'changed') {
       var dsec = section('Changed since it was verified');
       dsec.classList.add('mp-changed');
@@ -203,8 +223,9 @@
       }));
       box.appendChild(sp);
     }
+    if (MP.isFlow()) flowSections(box, n, isRoot, E && !clashed);
     // layout of what grows from it
-    if (E && !clashed && n.kids.length) {
+    if (E && !clashed && n.kids.length && !MP.isFlow()) {
       var lay = MP.select('mp-layout', [['tree', 'Tree: each level to the right'], ['columns', 'Columns: its branches side by side, each with a list under it']], n.props.layout || 'tree');
       lay.addEventListener('change', function () {
         var p = {}; for (var k in n.props) p[k] = n.props[k];
@@ -214,7 +235,7 @@
       var ls = section('Layout on the map'); ls.appendChild(lay); box.appendChild(ls);
     }
     // links from it
-    var out = MP.linesFrom(n.id).filter(function (l) { return l.kind === 'link' || l.kind === 'web'; });
+    var out = MP.linesFrom(n.id).filter(function (l) { return l.kind === 'link' || l.kind === 'web' || l.kind === 'tile'; });
     if (out.length || (E && !clashed)) {
       var lsec = section('Links');
       out.forEach(function (l) {
@@ -236,41 +257,46 @@
       box.appendChild(lsec);
     }
     // the other end: branches that link here (this map and others the reader may open)
-    var inbound = MP.linesTo(n.id);
+    var inbound = MP.linesTo(n.id).filter(function (l) { return l.kind !== 'flow'; });
     if (inbound.length) {
       var isec = section('Linked from');
       inbound.forEach(function (l) { isec.appendChild(lineNode(l, false)); });
       box.appendChild(isec);
     }
     // what grows from it
-    if (n.kids.length || (E && !clashed)) {
-      var kids = section(n.kids.length ? MP.plural(n.kids.length, 'branch', 'branches') + ' under it' : 'Branches under it');
+    if ((n.kids.length || (E && !clashed)) && (!MP.isFlow() || isRoot)) {
+      var kids = section(MP.isFlow() ? (n.kids.length ? MP.plural(n.kids.length, 'step') : 'Steps') : n.kids.length ? MP.plural(n.kids.length, 'branch', 'branches') + ' under it' : 'Branches under it');
       if (n.kids.length) kids.appendChild(el('ul', { class: 'mp-nkids' }, n.kids.map(function (k) {
         var c = N(k);
         return el('li', {}, el('button', { type: 'button', class: c.status === 'verified' ? '' : 'unv', on: { click: function () { n.open = true; open(k); } } },
           el('span', { text: c.title }), c.notes ? MP.ico('note') : null, c.kids.length ? el('small', { text: String(c.kids.length) }) : null));
       })));
-      if (E && !clashed) kids.appendChild(adder('mp-child', 'Name of a new branch under ' + n.title, 'Add', 120, function (v) { MP.nav.addBranch(n, v, false); }));
+      if (E && !clashed) kids.appendChild(adder('mp-child', MP.isFlow() ? 'Name of a new step (a Process, not yet joined)' : 'Name of a new branch under ' + n.title, 'Add', 120, function (v) { MP.nav.addBranch(n, v, false); }));
       box.appendChild(kids);
     }
     // this branch: alone, verify, move, delete, history
     var tools = [];
-    if (n.id !== st.focus && n.kids.length) tools.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Show this branch alone', on: { click: function () { var id = n.id; close(); MP.nav.focusOn(id); } } }));
+    if (n.id !== st.focus && n.kids.length && !MP.isFlow()) tools.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Show this branch alone', on: { click: function () { var id = n.id; close(); MP.nav.focusOn(id); } } }));
     if (MP.canVerify()) {
       var below = 0; MP.each(n.id, function (x) { if (x.id !== n.id && x.status !== 'verified') below++; });
       if (n.status !== 'verified') tools.push(el('button', { type: 'button', class: 'btn small primary', text: n.status === 'changed' ? 'Verify the change' : 'Mark as verified', on: { click: function () { verify(n, true, false); } } }));
       if (below) tools.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Verify it and the ' + MP.plural(below, 'branch', 'branches') + ' under it', on: { click: function () { verify(n, true, true); } } }));
     }
+    if (MP.canVerify() && !isRoot) tools.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Send back with a comment', on: { click: function () {
+      MP.sendBack(n.id, n.title).then(function (done) { if (done) MP.reload(); });
+    } } }));
     if (n.status !== 'to_verify' && !isRoot && (MP.canEdit() || MP.canVerify())) tools.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Mark to verify', on: { click: function () { verify(n, false, false); } } }));
     if (E && !isRoot) {
       var sibs = N(n.parent).kids, pos = sibs.indexOf(n.id);
       tools.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Move up', disabled: pos <= 0, on: { click: function () { MP.nav.move(n, n.parent, pos - 1); } } }));
       tools.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Move down', disabled: pos < 0 || pos >= sibs.length - 1, on: { click: function () { MP.nav.move(n, n.parent, pos + 1); } } }));
-      tools.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Move to...', on: { click: function () { MP.sheets.moveTo(n); } } }));
-      tools.push(el('button', { type: 'button', class: 'btn danger small', text: 'Delete branch', on: { click: function () { MP.nav.remove(n); } } }));
+      if (!MP.isFlow()) tools.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Move to...', on: { click: function () { MP.sheets.moveTo(n); } } }));
+      if (MP.isFlow() && n.place) tools.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Back to auto layout', title: 'Forget where it was put by hand', on: { click: function () { n.place = null; MP.send(n.id, { place: null }); MP.page.renderView(); render(); } } }));
+      tools.push(el('button', { type: 'button', class: 'btn danger small', text: MP.isFlow() ? 'Delete step' : 'Delete branch', on: { click: function () { MP.nav.remove(n); } } }));
     }
     tools.push(el('button', { type: 'button', class: 'btn ghost small', text: 'History of this branch', on: { click: function () { MP.sheets.history(n.id); } } }));
-    var tsec = section('This branch'); tsec.appendChild(el('div', { class: 'row' }, tools)); box.appendChild(tsec);
+    if (!MP.isFlow()) tools.push(el('button', { type: 'button', class: 'btn ghost small', text: isRoot ? 'Print the map' : 'Print this branch', title: 'An A4 outline: names, notes, special notes, links', on: { click: function () { var id = n.id; close(); MP.sheets.printOutline(id); } } }));
+    var tsec = section(MP.isFlow() && !isRoot ? 'This step' : 'This branch'); tsec.appendChild(el('div', { class: 'row' }, tools)); box.appendChild(tsec);
     box.appendChild(el('p', { class: 'mp-foot', id: 'mp-foot' }));
     foot();
     box.scrollTop = keep;
@@ -279,6 +305,93 @@
     if (f) { f.focus(); if (want === 'name' && f.select) f.select(); }
     else if (!box.contains(document.activeElement)) box.focus({ preventScroll: true });
     want = '';
+  }
+
+  // ---------- a flowchart step: its shape, its lane, the arrows out of it and into it ----------
+  function laneNames() {
+    var root = N(MP.M.root), list = ((root.props && root.props.lanes) || []).slice();
+    root.kids.forEach(function (id) { var l = N(id).props && N(id).props.lane; if (l && !list.some(function (x) { return x.toLowerCase() === l.toLowerCase(); })) list.push(l); });
+    return list;
+  }
+  function setProp(n, key, value) {
+    var p = {}; for (var k in n.props) p[k] = n.props[k];
+    if (value) p[key] = value; else delete p[key];
+    MP.setList(n, 'props', p);
+  }
+  function flowSections(box, n, isRoot, E) {
+    if (isRoot) {
+      var lanes = laneNames(), ls = section('Lanes');
+      ls.appendChild(lanes.length ? el('div', { class: 'mp-chips' }, lanes.map(function (x) { return el('span', { class: 'badge', text: x }); }))
+        : el('p', { class: 'muted', text: 'No lanes: the chart is one column.' }));
+      if (E) ls.appendChild(el('div', {}, el('button', { type: 'button', class: 'btn ghost small', text: 'Change the lanes', on: { click: function () { close(); MP.lanesSheet(); } } })));
+      box.appendChild(ls);
+      return;
+    }
+    var fs = section('Step'), type = n.type || 'process', lane = (n.props && n.props.lane) || '';
+    if (E) {
+      var shp = MP.select('mp-shape', MP.fc.SHAPES.map(function (x) { return [x.id, x.name]; }), type);
+      shp.addEventListener('change', function () {
+        var before = n.type; n.type = shp.value; MP.flush();
+        MP.send(n.id, { type: shp.value }, function () { n.type = before; });
+        MP.page.renderView(); render();
+      });
+      var names = laneNames();
+      var lsel = MP.select('mp-lane', [['', 'No lane']].concat(names.map(function (x) { return [x, x]; })).concat([['__new', 'New lane...']]), lane);
+      lsel.addEventListener('change', function () {
+        MP.keepLanes();
+        if (lsel.value !== '__new') { setProp(n, 'lane', lsel.value); return; }
+        var inp = el('input', { id: 'mp-lane-new', maxlength: '40', autocomplete: 'off', placeholder: 'e.g. Factory' });
+        Core.sheet({ title: 'New lane', body: MP.field('Lane name', inp, 'A role or a department. Up to 12 lanes.'), actions: [{ label: 'Cancel', value: null }, { label: 'Add', kind: 'primary', onClick: function () {
+          var v = inp.value.replace(/\s+/g, ' ').trim(); return v || false;
+        } }] }).then(function (v) {
+          if (!v) { lsel.value = lane; return; }
+          var root = N(MP.M.root), list = laneNames();
+          if (!list.some(function (x) { return x.toLowerCase() === v.toLowerCase(); })) {
+            if (list.length >= 12) { Core.toast('A flowchart holds up to 12 lanes.', 'danger'); lsel.value = lane; return; }
+            list.push(v); setProp(root, 'lanes', list);
+          }
+          setProp(n, 'lane', v);
+        });
+      });
+      fs.appendChild(el('div', { class: 'fc-pair' }, MP.field('Shape', shp), MP.field('Lane', lsel)));
+    } else {
+      fs.appendChild(el('div', { class: 'row' }, el('span', { class: 'fc-chip fc-c-' + type, text: MP.SHAPE_NAME[type] || 'Process' }),
+        lane ? el('span', { class: 'muted', text: 'in the lane ' + lane }) : null));
+    }
+    box.appendChild(fs);
+    // arrows out
+    var ex = MP.exitsOf(n.id), as = section(type === 'decision' ? 'Answers (arrows out)' : 'Arrows out');
+    if (!ex.length) as.appendChild(el('p', { class: 'muted', text: type === 'end' ? 'An End has no arrow out.' : 'None yet.' }));
+    ex.forEach(function (l) {
+      var to = N(l.to), go = el('button', { type: 'button', class: 'mp-link', on: { click: function () { open(l.to); } } },
+        el('span', { class: 'fc-arr', text: '→' }), el('span', { class: 't', text: to.title }), el('small', { text: MP.SHAPE_NAME[to.type] || '' }));
+      if (!E) { as.appendChild(el('div', { class: 'mp-linkrow' }, l.label ? el('b', { class: 'fc-ans', text: l.label }) : null, go)); return; }
+      var ans = el('input', { class: 'fc-ans-in', maxlength: '40', value: l.label || '', placeholder: type === 'decision' ? 'Answer, e.g. Yes' : 'Answer (optional)', 'aria-label': 'Answer on the arrow to ' + to.title });
+      ans.addEventListener('change', function () {
+        var v = ans.value.replace(/\s+/g, ' ').trim();
+        MP.act(function () { return MP.rpc('maps_line_save', { p_line: l.id, p_version: l.version, p_rel: null, p_label: v }); }, function () { return MP.reload(); });
+      });
+      as.appendChild(el('div', { class: 'mp-linkrow' }, ans, go, el('button', { type: 'button', class: 'btn ghost small', text: 'Remove', 'aria-label': 'Remove the arrow to ' + to.title,
+        on: { click: function () { MP.act(function () { return MP.rpc('maps_line_delete', { p_line: l.id }); }, function () { return MP.reload(); }); } } })));
+    });
+    if (E && type !== 'end') {
+      var others = N(MP.M.root).kids.filter(function (id) { return id !== n.id && !ex.some(function (l) { return l.to === id; }); });
+      if (others.length) {
+        var sel = el('select', { id: 'mp-arrow-to', 'aria-label': 'Arrow to' }, others.map(function (id) { return el('option', { value: id, text: N(id).title }); }));
+        as.appendChild(el('div', { class: 'mp-add' }, sel, el('button', { type: 'button', class: 'btn', text: 'Add arrow', on: { click: function () { MP.flowArrow(n, N(sel.value)); } } })));
+      }
+      as.appendChild(el('div', {}, el('button', { type: 'button', class: 'btn ghost small', text: '+ New step after it', on: { click: function () { close(); MP.chart.addStep(n, null); } } })));
+    }
+    box.appendChild(as);
+    var inn = MP.intoOf(n.id);
+    if (inn.length) {
+      var is = section('Arrows in');
+      inn.forEach(function (l) {
+        is.appendChild(el('button', { type: 'button', class: 'mp-link', on: { click: function () { open(l.from); } } },
+          el('span', { class: 't', text: N(l.from).title }), el('small', { text: l.label ? 'answer: ' + l.label : 'arrow from' })));
+      });
+      box.appendChild(is);
+    }
   }
 
   function copyMine(patch) {

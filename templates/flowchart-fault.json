@@ -1,0 +1,225 @@
+{
+  "name": "Fault finding",
+  "kind": "flowchart",
+  "about": "Finding and fixing a fault on a piece of equipment, with a specialist when the cause is not found. Generic steps only: rename, add and delete them for the real process. Everything it adds comes in \"to verify\".",
+  "items": [
+    {
+      "key": "s",
+      "title": "Fault reported",
+      "type": "start",
+      "props": {
+        "lane": "Technician"
+      },
+      "notes": "Who reports it, and what they should say: the equipment, the alarm, when it started.",
+      "next": [
+        {
+          "to": "a"
+        }
+      ]
+    },
+    {
+      "key": "a",
+      "title": "Safe to work on?",
+      "type": "decision",
+      "props": {
+        "lane": "Technician"
+      },
+      "next": [
+        {
+          "to": "c",
+          "label": "Yes"
+        },
+        {
+          "to": "i",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "key": "i",
+      "title": "Isolate and lock out",
+      "type": "manual",
+      "props": {
+        "lane": "Technician"
+      },
+      "notes": "The isolation procedure that applies on site.",
+      "next": [
+        {
+          "to": "c"
+        }
+      ]
+    },
+    {
+      "key": "c",
+      "title": "Read the alarm and the fault log",
+      "type": "data",
+      "props": {
+        "lane": "Technician"
+      },
+      "next": [
+        {
+          "to": "d"
+        }
+      ]
+    },
+    {
+      "key": "d",
+      "title": "Known fault?",
+      "type": "decision",
+      "props": {
+        "lane": "Technician"
+      },
+      "next": [
+        {
+          "to": "f",
+          "label": "Yes"
+        },
+        {
+          "to": "g",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "key": "f",
+      "title": "Follow the fault procedure",
+      "type": "subprocess",
+      "props": {
+        "lane": "Technician"
+      },
+      "notes": "Link the procedure for this fault (Add link).",
+      "next": [
+        {
+          "to": "t"
+        }
+      ]
+    },
+    {
+      "key": "g",
+      "title": "Check supply, controls and sensors",
+      "type": "process",
+      "props": {
+        "lane": "Technician"
+      },
+      "next": [
+        {
+          "to": "h"
+        }
+      ]
+    },
+    {
+      "key": "h",
+      "title": "Cause found?",
+      "type": "decision",
+      "props": {
+        "lane": "Technician"
+      },
+      "next": [
+        {
+          "to": "r",
+          "label": "Yes"
+        },
+        {
+          "to": "x",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "key": "x",
+      "title": "Diagnose with the specialist",
+      "type": "process",
+      "props": {
+        "lane": "Specialist"
+      },
+      "next": [
+        {
+          "to": "w"
+        }
+      ]
+    },
+    {
+      "key": "w",
+      "title": "Wait for parts or a visit",
+      "type": "delay",
+      "props": {
+        "lane": "Specialist"
+      },
+      "next": [
+        {
+          "to": "r"
+        }
+      ]
+    },
+    {
+      "key": "r",
+      "title": "Repair or replace",
+      "type": "process",
+      "props": {
+        "lane": "Technician"
+      },
+      "next": [
+        {
+          "to": "t"
+        }
+      ]
+    },
+    {
+      "key": "t",
+      "title": "Test run",
+      "type": "process",
+      "props": {
+        "lane": "Technician"
+      },
+      "next": [
+        {
+          "to": "o"
+        }
+      ]
+    },
+    {
+      "key": "o",
+      "title": "Working normally?",
+      "type": "decision",
+      "props": {
+        "lane": "Technician"
+      },
+      "next": [
+        {
+          "to": "k",
+          "label": "Yes"
+        },
+        {
+          "to": "d",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "key": "k",
+      "title": "Record what was done",
+      "type": "document",
+      "props": {
+        "lane": "Technician"
+      },
+      "notes": "The cause, the parts used, the readings after the repair.",
+      "next": [
+        {
+          "to": "e"
+        }
+      ]
+    },
+    {
+      "key": "e",
+      "title": "Fault closed",
+      "type": "end",
+      "props": {
+        "lane": "Technician"
+      }
+    }
+  ],
+  "lanes": [
+    "Technician",
+    "Specialist"
+  ]
+}
