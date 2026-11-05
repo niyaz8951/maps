@@ -3,6 +3,19 @@
 Chats that start with **DAME-MAPS** continue from here.
 
 ## Now
+- 2026-11-05 - **Process flows** (owner: "add all the things needed to make such flow diagrams", after the MTS / MTO
+  work-flow slides; "name it Process flow, two nodes only"). `db/maps/005_process_flow.sql`; the engine and chart extended:
+  - **Reply arrows**: an arrow is an arrow or a reply (dashed); a reply is drawn right beside the arrow it answers, the
+    arrow's words on the left, the reply's on the right; a legend appears ("Escalate / next", "Answer / reply").
+    Drawing an arrow back to a box that has an arrow to it makes a reply by itself. Mermaid `-.->` reads and writes as a reply.
+  - **Notes in the box**: a step can show its notes inside its box ("- " lines as bullets, two columns when long),
+    e.g. a list of roles.
+  - **Note** shape: a box beside the chart, joined to nothing, e.g. "Exclusions"; the checks leave it alone.
+  - **Group**: steps with the same group get a bracket with its name beside them (e.g. HQ).
+  - **Kind of chart** (on the centre; Map settings, or the centre's panel): Flowchart (Start to End, fully checked) or
+    **Process flow** (Start and End optional, steps may branch; a box joined to nothing gets a warning).
+  - New starter: **Process flow: two boxes, an arrow and a reply** (Level 1, Level 2). Your real flows stay in your data.
+  - Checked locally: database tests, 90+ engine worked examples (an escalation ladder among them), browser runs: all pass.
 - 2026-11-05 - **Steps 2 and 3 delivered together** (owner: "push step 2 and 3 till flow charts asap"): flowcharts and the
   knowledge extras. Waiting for the owner's check (below).
   - **Flowcharts** (`db/maps/003_flowcharts.sql`, `assets/mp-fc.js`, `assets/mp-chart.js`): Add map > Flowchart (blank,
@@ -35,9 +48,10 @@ Chats that start with **DAME-MAPS** continue from here.
 | `db/maps/002_flowchart_ready.sql` | 2026-11-05 | - |
 | `db/maps/003_flowcharts.sql` | not yet | - |
 | `db/maps/004_review.sql` | not yet | - |
+| `db/maps/005_process_flow.sql` | not yet | - |
 
 ## Owner, to apply and check steps 2 and 3
-1. SQL editor: paste `db/maps/003_flowcharts.sql` whole and run; then `db/maps/004_review.sql` the same way. Then
+1. SQL editor: paste `db/maps/003_flowcharts.sql` whole and run; then `004_review.sql`, then `005_process_flow.sql`. Then
    `select * from core.security_check();` - no rows. Security Advisor: no errors.
 2. `db/maps/tests.sql`: run it whole; it rolls everything back and must end with `ALL MAPS TESTS PASSED`.
 3. On a laptop (Edit on), day and night:
@@ -53,6 +67,10 @@ Chats that start with **DAME-MAPS** continue from here.
    - Export: Mermaid, the drawing (.svg), the step list (.xlsx), Print A3 (choose "Save as PDF" to get a PDF).
    - A knowledge map: Add link > A page of another DAME tile (e.g. `projects`); it opens that tile. Send a branch back
      with a comment; on the list page, **Review** shows it with the comment; Verify it there. Export > Print (A4).
+   - Add map > **Process flow: two boxes, an arrow and a reply**. Edit: choose Level 2, drag its **+** down to empty
+     space for Level 3, then drag Level 3's **+** back up onto Level 2: the reply comes dashed by itself. Double-click
+     Level 1: write the roles as "- " lines and tick **Show the notes in the box**. Give Level 2 and 3 the same **Group**.
+     **+ Add step**, shape **Note**, for an exclusions list. Map settings > Kind of chart switches between the two.
 4. On a phone: open the flowchart: the Outline with each step's answers, the check bar; the Map tab pans and zooms.
 5. Tell this project "steps 2 and 3 checked", and anything that should work differently.
 

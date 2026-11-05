@@ -13,7 +13,8 @@
       ['knowledge-selection', 'Equipment selection: inputs, rules, steps, checks ...', 'knowledge'],
       ['knowledge-troubleshooting', 'Troubleshooting guide: alarms, symptoms, measurements ...', 'knowledge'],
       ['knowledge-standard', 'Standard or specification: scope, clauses, how we comply ...', 'knowledge']]],
-    ['Flowchart', [
+    ['Flowchart or process flow', [
+      ['flowchart-process', 'Process flow: two boxes, an arrow and a reply (e.g. an escalation ladder)', 'flowchart'],
       ['flowchart-blank', 'Flowchart: a Start and an End to build between', 'flowchart'],
       ['flowchart-approval', 'Flowchart: approval with review and rework, in lanes', 'flowchart'],
       ['flowchart-fault', 'Flowchart: fault finding, technician and specialist', 'flowchart'],
@@ -119,12 +120,20 @@
       if (!v) { err.textContent = 'Give the map a name, usually the product.'; err.hidden = false; name.focus(); return false; }
       if (busy) return false;
       busy = true;
+      var tpl = null;
       var items = start.value ? fetch('/maps/templates/' + start.value + '.json', { credentials: 'same-origin' }).then(function (res) {
         if (!res.ok) throw new Error('The starter could not be loaded.');
         return res.json();
-      }).then(function (t) { return t.items; }) : Promise.resolve(null);
+      }).then(function (t) { tpl = t; return t.items; }) : Promise.resolve(null);
       return items.then(function (list) {
         return MP.rpc('maps_create', { p_name: v, p_kind: KIND_OF[start.value] || 'knowledge', p_share: share.value, p_items: list });
+      }).then(function (r) {
+        // a starter may set the kind of chart (a process flow), kept on the centre
+        if (!tpl || tpl.style !== 'process') return r;
+        return MP.rpc('maps_get', { p_map: r.id }).then(function (g) {
+          var root = g.branches.filter(function (b) { return !b.parent; })[0];
+          return MP.rpc('maps_branch_save', { p_branch: root.id, p_version: root.version, p_patch: { props: Object.assign({}, root.props || {}, { style: 'process' }) } });
+        }).then(function () { return r; }, function () { return r; });
       }).then(function (r) {
         MP.store('edit-next', r.id);                     // a new map opens in Edit
         Core.go('/maps/?map=' + encodeURIComponent(r.id));

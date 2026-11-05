@@ -84,7 +84,7 @@
   function lineWords(x) {
     if (x.kind === 'web') return 'Web link: ' + (x.label || x.target);
     if (x.kind === 'tile') return 'Tile link: ' + (x.label || x.target);
-    if (x.kind === 'flow') return 'Arrow to ' + (x.to_title || 'a step') + (x.label ? ' ("' + x.label + '")' : '');
+    if (x.kind === 'flow') return (x.rel === 'reply' ? 'Reply to ' : 'Arrow to ') + (x.to_title || 'a step') + (x.label ? ' ("' + x.label + '")' : '');
     return MP.rel(x.rel).label + ': ' + (x.to_title || 'a branch') + (x.label ? ' ("' + x.label + '")' : '');
   }
   MP.lineWords = lineWords;
@@ -320,6 +320,13 @@
   }
   function flowSections(box, n, isRoot, E) {
     if (isRoot) {
+      var ks = section('Kind of chart'), style = MP.flowStyle();
+      if (E) {
+        var ksel = MP.select('mp-style', [['flowchart', 'Flowchart: from a Start to an End, fully checked'], ['process', 'Process flow: e.g. an escalation ladder; Start and End optional, steps may branch']], style);
+        ksel.addEventListener('change', function () { setProp(n, 'style', ksel.value === 'process' ? 'process' : null); });
+        ks.appendChild(ksel);
+      } else ks.appendChild(el('p', { text: style === 'process' ? 'Process flow: Start and End are optional, steps may branch.' : 'Flowchart: from a Start to an End.' }));
+      box.appendChild(ks);
       var lanes = laneNames(), ls = section('Lanes');
       ls.appendChild(lanes.length ? el('div', { class: 'mp-chips' }, lanes.map(function (x) { return el('span', { class: 'badge', text: x }); }))
         : el('p', { class: 'muted', text: 'No lanes: the chart is one column.' }));
@@ -331,8 +338,11 @@
     if (E) {
       var shp = MP.select('mp-shape', MP.fc.SHAPES.map(function (x) { return [x.id, x.name]; }), type);
       shp.addEventListener('change', function () {
-        var before = n.type; n.type = shp.value; MP.flush();
-        MP.send(n.id, { type: shp.value }, function () { n.type = before; });
+        var before = n.type, beforeP = n.props, patch = { type: shp.value };
+        // a Note keeps no lane, group or arrows (they stay in history and come back if it changes shape again)
+        if (shp.value === 'note') { patch.props = {}; n.props = {}; if (MP.exitsOf(n.id).length || MP.intoOf(n.id).length) Core.toast('As a Note it stands beside the chart: its arrows are left out.'); }
+        n.type = shp.value; MP.flush();
+        MP.send(n.id, patch, function () { n.type = before; n.props = beforeP; });
         MP.page.renderView(); render();
       });
       var names = laneNames();
@@ -354,31 +364,51 @@
         });
       });
       fs.appendChild(el('div', { class: 'fc-pair' }, MP.field('Shape', shp), MP.field('Lane', lsel)));
+      if (type !== 'note') {
+        var groups = []; N(MP.M.root).kids.forEach(function (id) { var gname = N(id).props && N(id).props.group; if (gname && groups.indexOf(gname) < 0) groups.push(gname); });
+        var gin = el('input', { id: 'mp-group', maxlength: '40', autocomplete: 'off', list: 'mp-group-list', value: (n.props && n.props.group) || '', placeholder: 'e.g. Head office' });
+        gin.addEventListener('change', function () { setProp(n, 'group', gin.value.replace(/\s+/g, ' ').trim()); });
+        var dl = el('datalist', { id: 'mp-group-list' }, groups.map(function (x) { return el('option', { value: x }); }));
+        var showable = !!MP.fc.SHOWABLE[type];
+        var chk = el('input', { type: 'checkbox', id: 'mp-shownotes', checked: !!(n.props && n.props.show_notes), disabled: !showable });
+        chk.addEventListener('change', function () { setProp(n, 'show_notes', chk.checked ? true : null); });
+        fs.appendChild(el('div', { class: 'fc-pair' },
+          MP.field('Group', el('div', {}, gin, dl), 'Steps with the same group get a bracket with its name beside them.'),
+          el('div', { class: 'field' }, el('label', { class: 'fc-check' }, chk, ' Show the notes in the box'),
+            el('p', { class: 'hint', text: showable ? 'Lines starting with "- " show as bullets: e.g. a list of roles.' : 'Not for a ' + (MP.SHAPE_NAME[type] || type) + '.' }))));
+      } else fs.appendChild(el('p', { class: 'hint', text: 'A Note stands beside the chart with its notes in it, joined to nothing. Write it in the notes above.' }));
     } else {
       fs.appendChild(el('div', { class: 'row' }, el('span', { class: 'fc-chip fc-c-' + type, text: MP.SHAPE_NAME[type] || 'Process' }),
-        lane ? el('span', { class: 'muted', text: 'in the lane ' + lane }) : null));
+        lane ? el('span', { class: 'muted', text: 'in the lane ' + lane }) : null, n.props && n.props.group ? el('span', { class: 'muted', text: 'group ' + n.props.group }) : null));
     }
     box.appendChild(fs);
+    if (type === 'note') return;
     // arrows out
     var ex = MP.exitsOf(n.id), as = section(type === 'decision' ? 'Answers (arrows out)' : 'Arrows out');
     if (!ex.length) as.appendChild(el('p', { class: 'muted', text: type === 'end' ? 'An End has no arrow out.' : 'None yet.' }));
     ex.forEach(function (l) {
       var to = N(l.to), go = el('button', { type: 'button', class: 'mp-link', on: { click: function () { open(l.to); } } },
-        el('span', { class: 'fc-arr', text: '→' }), el('span', { class: 't', text: to.title }), el('small', { text: MP.SHAPE_NAME[to.type] || '' }));
-      if (!E) { as.appendChild(el('div', { class: 'mp-linkrow' }, l.label ? el('b', { class: 'fc-ans', text: l.label }) : null, go)); return; }
+        el('span', { class: 'fc-arr', text: l.rel === 'reply' ? '↩' : '→' }), el('span', { class: 't', text: to.title }), el('small', { text: MP.SHAPE_NAME[to.type] || '' }));
+      if (!E) { as.appendChild(el('div', { class: 'mp-linkrow' }, l.label ? el('b', { class: 'fc-ans', text: l.label }) : null, go, l.rel === 'reply' ? el('small', { class: 'muted', text: 'reply' }) : null)); return; }
+      var kind = MP.select('', [['next', 'Arrow'], ['reply', 'Reply (dashed)']], l.rel === 'reply' ? 'reply' : 'next');
+      kind.className = 'fc-kind'; kind.removeAttribute('id'); kind.setAttribute('aria-label', 'Arrow or reply');
+      kind.addEventListener('change', function () {
+        MP.act(function () { return MP.rpc('maps_line_save', { p_line: l.id, p_version: l.version, p_rel: kind.value, p_label: null }); }, function () { return MP.reload(); });
+      });
       var ans = el('input', { class: 'fc-ans-in', maxlength: '40', value: l.label || '', placeholder: type === 'decision' ? 'Answer, e.g. Yes' : 'Answer (optional)', 'aria-label': 'Answer on the arrow to ' + to.title });
       ans.addEventListener('change', function () {
         var v = ans.value.replace(/\s+/g, ' ').trim();
         MP.act(function () { return MP.rpc('maps_line_save', { p_line: l.id, p_version: l.version, p_rel: null, p_label: v }); }, function () { return MP.reload(); });
       });
-      as.appendChild(el('div', { class: 'mp-linkrow' }, ans, go, el('button', { type: 'button', class: 'btn ghost small', text: 'Remove', 'aria-label': 'Remove the arrow to ' + to.title,
+      as.appendChild(el('div', { class: 'mp-linkrow' }, ans, go, kind, el('button', { type: 'button', class: 'btn ghost small', text: 'Remove', 'aria-label': 'Remove the arrow to ' + to.title,
         on: { click: function () { MP.act(function () { return MP.rpc('maps_line_delete', { p_line: l.id }); }, function () { return MP.reload(); }); } } })));
     });
     if (E && type !== 'end') {
-      var others = N(MP.M.root).kids.filter(function (id) { return id !== n.id && !ex.some(function (l) { return l.to === id; }); });
+      var others = N(MP.M.root).kids.filter(function (id) { return id !== n.id && N(id).type !== 'note' && !ex.some(function (l) { return l.to === id; }); });
       if (others.length) {
         var sel = el('select', { id: 'mp-arrow-to', 'aria-label': 'Arrow to' }, others.map(function (id) { return el('option', { value: id, text: N(id).title }); }));
-        as.appendChild(el('div', { class: 'mp-add' }, sel, el('button', { type: 'button', class: 'btn', text: 'Add arrow', on: { click: function () { MP.flowArrow(n, N(sel.value)); } } })));
+        var nk = MP.select('mp-arrow-kind', [['next', 'Arrow'], ['reply', 'Reply (dashed)']], 'next'); nk.className = 'fc-kind';
+        as.appendChild(el('div', { class: 'mp-add' }, sel, nk, el('button', { type: 'button', class: 'btn', text: 'Add', on: { click: function () { MP.flowArrow(n, N(sel.value), nk.value); } } })));
       }
       as.appendChild(el('div', {}, el('button', { type: 'button', class: 'btn ghost small', text: '+ New step after it', on: { click: function () { close(); MP.chart.addStep(n, null); } } })));
     }
@@ -388,7 +418,7 @@
       var is = section('Arrows in');
       inn.forEach(function (l) {
         is.appendChild(el('button', { type: 'button', class: 'mp-link', on: { click: function () { open(l.from); } } },
-          el('span', { class: 't', text: N(l.from).title }), el('small', { text: l.label ? 'answer: ' + l.label : 'arrow from' })));
+          el('span', { class: 't', text: N(l.from).title }), el('small', { text: (l.rel === 'reply' ? 'reply' : 'arrow') + (l.label ? ': ' + l.label : '') })));
       });
       box.appendChild(is);
     }

@@ -420,6 +420,51 @@ begin
   reset role;
 end $$;
 
+-- ---------------------------------------------------------------- 005: process flows (replies, Note, group, notes in the box, style)
+do $$
+declare v jsonb; v_f uuid; v_root uuid; v_a uuid; v_b uuid; v_n uuid; v_l uuid;
+begin
+  perform pg_temp.act_as('mt_edit');
+  v := public.maps_create('Escalation', 'flowchart', 'private',
+    '[{"key":"a","title":"First line","props":{"group":"Office","show_notes":true},"notes":"- Answer\n- Log","next":[{"to":"b","label":"Not resolved"}]},
+      {"key":"b","title":"Specialists","props":{"group":"Office"},"next":[{"to":"a","label":"Answer","reply":true}]},
+      {"key":"n","type":"note","title":"Not handled here","notes":"Orders"}]');
+  v_f := (v ->> 'id')::uuid;
+  v := public.maps_get(v_f);
+  select (b ->> 'id')::uuid into v_root from jsonb_array_elements(v -> 'branches') b where b ->> 'parent' is null;
+  select (b ->> 'id')::uuid into v_a from jsonb_array_elements(v -> 'branches') b where b ->> 'title' = 'First line';
+  select (b ->> 'id')::uuid into v_b from jsonb_array_elements(v -> 'branches') b where b ->> 'title' = 'Specialists';
+  select (b ->> 'id')::uuid into v_n from jsonb_array_elements(v -> 'branches') b where b ->> 'title' = 'Not handled here';
+  perform pg_temp.check((select l ->> 'rel' from jsonb_array_elements(v -> 'lines') l where (l ->> 'from')::uuid = v_b) = 'reply', 'import: a reply arrow');
+  perform pg_temp.check((select b -> 'props' from jsonb_array_elements(v -> 'branches') b where (b ->> 'id')::uuid = v_a) = '{"group": "Office", "show_notes": true}'::jsonb, 'group and notes-in-the-box kept');
+  perform pg_temp.check((select b ->> 'type' from jsonb_array_elements(v -> 'branches') b where (b ->> 'id')::uuid = v_n) = 'note', 'a Note');
+  -- the kind of chart, on the centre
+  v := public.maps_branch_save(v_root, 1, '{"props":{"style":"process"}}');
+  perform pg_temp.check(v -> 'props' ->> 'style' = 'process', 'a process flow');
+  perform pg_temp.expect_error(format('select public.maps_branch_save(%L, 2, ''{"props":{"style":"mindmap"}}'')', v_root), 'INVALID:props');
+  perform pg_temp.expect_error(format('select public.maps_branch_save(%L, 1, ''{"props":{"show_notes":"yes"}}'')', v_b), 'INVALID:props');
+  perform pg_temp.expect_error(format('select public.maps_branch_save(%L, 1, ''{"props":{"group":"x"}}'')', v_n), 'INVALID:props');
+  -- arrows: next or reply, never to or from a Note
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', ''reply'', %L, null, null)', v_a, v_b), 'INVALID:duplicate');   -- one arrow per pair
+  v := public.maps_branch_add(v_root, 'Third line');
+  v := public.maps_line_add((v ->> 'id')::uuid, 'flow', 'reply', v_a, null, 'Ask again'); v_l := (v ->> 'id')::uuid;
+  perform pg_temp.check((select l ->> 'rel' from jsonb_array_elements(public.maps_get(v_f) -> 'lines') l where (l ->> 'id')::uuid = v_l) = 'reply', 'reply arrow added');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', ''answer'', %L, null, null)', v_b, v_a), 'INVALID:rel');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', null, %L, null, null)', v_a, v_n), 'INVALID:to');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', null, %L, null, null)', v_n, v_a), 'INVALID:to');
+  v := public.maps_line_save(v_l, 1, 'next', null);
+  perform pg_temp.check((select l ->> 'rel' from jsonb_array_elements(public.maps_get(v_f) -> 'lines') l where (l ->> 'id')::uuid = v_l) = 'next', 'a reply made an arrow');
+  perform pg_temp.expect_error(format('select public.maps_line_save(%L, 2, ''see'', null)', v_l), 'INVALID:rel');
+  perform pg_temp.expect_error(format('select public.maps_import(%L, ''[{"key":"x","title":"x","next":[{"to":"y"}]},{"key":"y","type":"note","title":"y"}]'')', v_root), 'INVALID:items');
+  perform pg_temp.expect_error(format('select public.maps_import(%L, ''[{"key":"x","title":"x","next":[{"to":"y","reply":"yes"}]},{"key":"y","title":"y"}]'')', v_root), 'INVALID:items');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''link'', ''reply'', %L, null, null)', v_a, v_b), 'INVALID:rel');
+  reset role;
+  perform pg_temp.act_as('mt_edit2');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', ''reply'', %L, null, null)', v_b, v_a), 'NOT_FOUND');
+  reset role;
+  delete from maps.maps where id = v_f;
+end $$;
+
 do $$
 declare v jsonb; v_b uuid; v_a uuid; v_new uuid;
 begin

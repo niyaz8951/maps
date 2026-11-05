@@ -130,6 +130,44 @@ const MERMAID = 'flowchart TD\n  subgraph Site\n    A([Alarm]) --> B{Pump runnin
   check(im.d === 'data' && im.b === 'decision' && im.lane === 'Site' && JSON.stringify(im.lanes) === '["Site"]' && im.no === 'Yes,No', 'imported shapes, lane and answers');
   await shot(own, '14-mermaid');
 
+  // 9. a process flow: two boxes to start; replies, notes in the box, a group, a Note, the legend
+  await own.goto(BASE + '/maps/'); await own.waitForSelector('.mp-tile');
+  await own.click('#mp-new'); await own.fill('#mp-new-name', 'Escalation test'); await own.selectOption('#mp-new-start', 'flowchart-process');
+  await own.click('.sheet .btn.primary'); await own.waitForSelector('.fc-step'); await own.waitForTimeout(300);
+  check((await own.$$('.fc-step')).length === 2 && (await own.$$('.fc-edge.reply')).length === 1 && (await own.$$('.fc-legend')).length === 1, 'process flow starter: two boxes, an arrow and a dashed reply, a legend');
+  check(/Process flow/.test(await own.textContent('#mp-sub')) && /Check: all good/.test(await own.textContent('#fc-bar')), 'a process flow: no Start or End asked for');
+  // a third level below, then drawn back up: the arrow back is a reply by itself
+  await own.click(await at(own, step('Level 2'))); await own.waitForSelector('.fc-handle');
+  const hp = await centre(own, '.fc-handle');
+  await own.mouse.move(hp.x, hp.y); await own.mouse.down(); await own.mouse.move(hp.x + 10, hp.y + 40, { steps: 4 }); await own.mouse.move(hp.x, hp.y + 150, { steps: 8 }); await own.mouse.up();
+  await own.waitForSelector('#mp-name'); await own.fill('#mp-name', 'Level 3'); await settle(own); await own.keyboard.press('Escape');
+  await own.waitForFunction(() => Object.values(MP.M.nodes).some((x) => x.title === 'Level 3'));
+  await own.click(await at(own, step('Level 3'))); await own.waitForSelector('.fc-handle');
+  const h3 = await centre(own, '.fc-handle'), t2 = await centre(own, step('Level 2'));
+  await own.mouse.move(h3.x, h3.y); await own.mouse.down(); await own.mouse.move(h3.x + 20, h3.y + 20, { steps: 4 }); await own.mouse.move(t2.x, t2.y, { steps: 8 }); await own.mouse.up();
+  await own.waitForFunction(() => document.querySelectorAll('.fc-edge.reply').length === 2);
+  check(true, 'drawn back up to the box it came from: a reply (dashed), by itself');
+  // notes in the box, a group, a Note
+  await own.dblclick(await at(own, step('Level 1'))); await own.waitForSelector('#mp-notes');
+  await own.fill('#mp-notes', 'ROLES\n- Selection\n- Pricing\n- Quotation'); await own.check('#mp-shownotes'); await settle(own); await own.keyboard.press('Escape');
+  await own.waitForSelector('.fc-card-n');
+  check(/• Pricing/.test(await own.textContent('.fc-card-n')), 'notes shown in the box, as bullets');
+  for (const t of ['Level 2', 'Level 3']) {
+    await own.dblclick(await at(own, step(t))); await own.waitForSelector('#mp-group');
+    await own.fill('#mp-group', 'Head office'); await own.press('#mp-group', 'Tab'); await settle(own); await own.keyboard.press('Escape');
+  }
+  await own.waitForSelector('.fc-group-t');
+  check(await own.textContent('.fc-group-t') === 'Head office' && (await own.$$('.fc-group')).length === 1, 'one bracket for the group, with its name');
+  await own.click('#fc-bar button:text-is("+ Add step")'); await own.waitForSelector('#mp-name');
+  await own.fill('#mp-name', 'Not handled here'); await own.selectOption('#mp-shape', 'note'); await own.fill('#mp-notes', '- Orders\n- Prices');
+  await settle(own); await own.keyboard.press('Escape');
+  await own.waitForSelector('.fc-step.fc-note');
+  check(/Check: all good/.test(await own.textContent('#fc-bar')), 'a Note beside the chart: nothing to fix');
+  const pm = await own.evaluate(() => MP.chart.mermaid());
+  check(/-\.->/.test(pm) && /shape: braces/.test(pm), 'Mermaid out: replies dashed, the Note as braces');
+  await own.click('#mp-read'); await own.waitForTimeout(300); await own.click('#mp-fit'); await own.waitForTimeout(300);
+  await shot(own, '19-process-flow');
+
   // 8. step 2: a knowledge starter, a link to another tile, the review list and send back, print as an A4 outline
   await own.goto(BASE + '/maps/'); await own.waitForSelector('.mp-tile');
   await own.click('#mp-new'); await own.fill('#mp-new-name', 'Selection test'); await own.selectOption('#mp-new-start', 'knowledge-selection');

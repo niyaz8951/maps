@@ -4,7 +4,8 @@
    special-note lines that are now typed values: "Layout: columns" becomes the Layout of the branch, "Place: 120, 80"
    its place on the 2D drawing. Lines whose values belong to types that are not built yet (Flow, Source, Icon ... for
    piping and wiring maps) stay special notes, word for word.
-   A flowchart (kind 'flowchart') also reads "Shape: Decision", "Lane: Sales" and "Next: Yes -> Step name" under each
+   A flowchart (kind 'flowchart') also reads "Shape: Decision", "Lane: Sales", "Group: HQ", "Show notes: yes",
+   "Next: Yes -> Step name" and "Reply: Answer -> Step name" (a dashed reply arrow) under each
    step; the steps are flat (all under the centre) and the arrows are matched to the steps by name.
    Pure functions: the same file runs in the browser (window.MP.io) and in node (dev/outline-check.mjs). */
 (function (root) {
@@ -29,7 +30,7 @@
   var SHAPE_NAMES = { start: 'start', begin: 'start', end: 'end', stop: 'end', terminal: 'end', process: 'process', step: 'process',
     decision: 'decision', question: 'decision', data: 'data', 'input / output': 'data', 'input/output': 'data', input: 'data', output: 'data',
     document: 'document', manual: 'manual', 'manual step': 'manual', wait: 'delay', delay: 'delay', 'sub-process': 'subprocess',
-    subprocess: 'subprocess', connector: 'connector' };
+    subprocess: 'subprocess', connector: 'connector', note: 'note', 'note (beside the chart)': 'note' };
   var FLOW = {
     shape: { read: function (v) { return SHAPE_NAMES[v.toLowerCase()] || null; }, put: function (item, v) { item.type = v; } },
     lane: { read: function (v) { return v.length <= 40 ? v : null; }, put: function (item, v) { item.props.lane = v; } },
@@ -38,6 +39,11 @@
               return m ? { label: (m[1] || '').slice(0, 40), to: m[2].trim() } : null;
             },
             put: function (item, v) { (item._next = item._next || []).push(v); } },
+    reply: { read: function (v) { var r = FLOW.next.read(v); if (r) r.reply = true; return r; },
+             put: function (item, v) { (item._next = item._next || []).push(v); } },
+    group: { read: function (v) { return v.length <= 40 ? v : null; }, put: function (item, v) { item.props.group = v; } },
+    'show notes': { read: function (v) { return /^(yes|on|true)$/i.test(v) ? true : /^(no|off|false)$/i.test(v) ? false : null; },
+                    put: function (item, v) { if (v) item.props.show_notes = true; } },
     lanes: { read: function (v) { var l = v.split(',').map(function (x) { return x.trim().slice(0, 40); }).filter(Boolean); return l.length ? l.slice(0, 12) : null; },
              put: function (item, v) { item._lanes = v; } }
   };
@@ -93,9 +99,9 @@
         it.next = [];
         (it._next || []).forEach(function (n) {
           var to = byTitle[n.to.toLowerCase()];
-          if (!to || to === it.key) { unknown.push(n.to); it.special.push(('Next: ' + (n.label ? n.label + ' -> ' : '') + n.to).slice(0, LIMITS.special)); return; }
+          if (!to || to === it.key) { unknown.push(n.to); it.special.push(((n.reply ? 'Reply: ' : 'Next: ') + (n.label ? n.label + ' -> ' : '') + n.to).slice(0, LIMITS.special)); return; }
           if (seen[to] || it.next.length >= 20) return;
-          seen[to] = true; it.next.push({ to: to, label: n.label });
+          seen[to] = true; it.next.push(n.reply ? { to: to, label: n.label, reply: true } : { to: to, label: n.label });
         });
         delete it._next;
         if (it.special.length > LIMITS.specials) { it.special = it.special.slice(0, LIMITS.specials); cut++; }
@@ -119,7 +125,9 @@
       if (flow && d > 0) {
         out.push(pad + '  ! Shape: ' + flow.name(n.type));
         if (n.props && n.props.lane) out.push(pad + '  ! Lane: ' + n.props.lane);
-        flow.exits(nid).forEach(function (x) { out.push(pad + '  ! Next: ' + (x.label ? x.label + ' -> ' : '-> ') + x.to_title); });
+        if (n.props && n.props.group) out.push(pad + '  ! Group: ' + n.props.group);
+        if (n.props && n.props.show_notes) out.push(pad + '  ! Show notes: yes');
+        flow.exits(nid).forEach(function (x) { out.push(pad + '  ! ' + (x.reply ? 'Reply: ' : 'Next: ') + (x.label ? x.label + ' -> ' : '-> ') + x.to_title); });
       }
       if (flow && d === 0 && n.props && n.props.lanes && n.props.lanes.length) out.push(pad + '  ! Lanes: ' + n.props.lanes.join(', '));
       (n.kids || []).forEach(function (k) { walk(k, d + 1); });

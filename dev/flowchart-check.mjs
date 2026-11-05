@@ -188,12 +188,59 @@ check(rd.items[4].props.lane === 'Application' && !rd.unknown.length, 'outline: 
 const kn = io.parse('Pump\n  ! Shape: Decision\n  ! Next: Yes -> Pump');
 check(kn.items[0].special.length === 2 && !kn.items[0].type, 'outline: in a knowledge map these stay special notes');
 
+// 11. A process flow (an escalation ladder, invented names): replies beside their arrows, notes in a box, a Note, a group
+const P = (id, title, type, extra, order) => Object.assign({ id, title, type, lane: '', order }, extra || {});
+const esc = {
+  style: 'process',
+  steps: [P('s', 'Requester', 'start', {}, 0),
+    P('l1', 'Level 1 - First line', 'process', { showNotes: true, notes: 'ROLES\n- Answer standard questions\n- Log every request\n- Escalate what is not resolved' }, 1),
+    P('l2', 'Level 2 - Knowledge base', 'data', {}, 2), P('l3', 'Level 3 - Specialists', 'process', { group: 'Head office' }, 3),
+    P('p', 'Level 4 - Product team', 'process', { group: 'Head office' }, 4), P('f', 'Level 4 - Factory', 'process', { group: 'Head office' }, 5),
+    P('n', 'Not handled here', 'note', { notes: '- Orders\n- Prices' }, 6)],
+  flows: [
+    { id: 'q', from: 's', to: 'l1', label: 'Query' }, { id: 'qr', from: 'l1', to: 's', label: 'Reply', reply: true },
+    { id: 'a', from: 'l1', to: 'l2', label: 'Not resolved' }, { id: 'ar', from: 'l2', to: 'l1', label: 'Answer', reply: true },
+    { id: 'b', from: 'l2', to: 'l3', label: 'No answer found' }, { id: 'br', from: 'l3', to: 'l2', label: 'Answer', reply: true },
+    { id: 'c', from: 'l3', to: 'p', label: 'Not resolved' }, { id: 'cr', from: 'p', to: 'l3', label: 'Answer', reply: true },
+    { id: 'd', from: 'l3', to: 'f', label: 'Not resolved' }, { id: 'dr', from: 'f', to: 'l3', label: 'Answer', reply: true }]
+};
+const E = fc.layout(esc), EN = E.nodes, edge = (id) => E.edges.find((e) => e.id === id);
+check(EN.s.y < EN.l1.y && EN.l1.y < EN.l2.y && EN.l2.y < EN.l3.y && EN.l3.y < EN.p.y && EN.p.y === EN.f.y, 'replies do not change the order: the levels go down, level 4 side by side');
+check(E.edges.length === 10 && E.edges.filter((e) => e.reply).length === 5, 'five arrows and five replies drawn');
+const q = edge('a'), qr = edge('ar');
+check(q.pts.length === 2 && qr.pts.length === 2 && q.pts[0][0] === qr.pts[0][0] - 14 && qr.pts[0][1] > qr.pts[1][1], 'a reply runs beside its arrow, the other way');
+check(q.anchor === 'end' && qr.anchor === 'start' && q.lx < q.pts[0][0] && qr.lx > qr.pts[0][0], 'the arrow\'s words on the left, the reply\'s on the right');
+check(E.edges.every((e) => e.clear), 'no arrow or reply crosses a box');
+check(EN.l1.card && EN.l1.notes[0].length === 4 && EN.l1.notes[0][1] === '• Answer standard questions' && EN.l1.h > 100, 'notes shown in the box, as bullets');
+check(EN.n.card && EN.n.x >= Math.max(...['s', 'l1', 'l2', 'l3', 'p', 'f'].map((k) => EN[k].x + EN[k].w)), 'the Note stands to the right of the chart');
+const G = E.groups[0];
+check(E.groups.length === 1 && G.name === 'Head office' && G.y1 <= EN.l3.y && G.y2 >= EN.p.y + EN.p.h && G.x < Math.min(EN.l3.x, EN.p.x) && E.box.x < G.x - 60, 'group bracket on the left of its boxes, with room for its name');
+check(E.legend && E.legend.y > EN.f.y + EN.f.h, 'a legend under the chart when there are replies');
+check(fc.check(esc).every((x) => x.level === 'info'), 'process flow: no End, branching, replies and a Note are all fine');
+check(fc.check(Object.assign({}, esc, { style: 'flowchart' })).some((x) => x.text.indexOf('no End') >= 0), 'the same as a flowchart: an End is asked for');
+const lone = JSON.parse(JSON.stringify(esc)); lone.steps.push(P('z', 'Forgotten box', 'process', {}, 9));
+check(fc.check(lone).some((x) => x.level === 'warning' && x.ids[0] === 'z'), 'process flow: a box joined to nothing gets a warning');
+const pe = fc.paths(esc);
+check(pe.paths.length === 2 && pe.paths.every((x) => x.end === 'stop' && x.steps.length === 5), 'ways through follow the arrows, not the replies');
+const card = fc.sizeOf({ type: 'process', title: 'Long list', showNotes: true, notes: Array.from({ length: 12 }, (_, i) => '- Item ' + (i + 1)).join('\n') });
+check(card.notes.length === 2 && card.w === 460, 'many lines of notes: two columns');
+check(fc.sizeOf({ type: 'decision', title: 'Q?', showNotes: true, notes: 'x' }).card !== true, 'a Decision keeps its shape (no notes in it)');
+const em = fc.mermaid.write(esc), eb = fc.mermaid.parse(em);
+check(/n2 -.->\|"Reply"\| n1/.test(em) && /@\{ shape: braces/.test(em), 'Mermaid out: replies dashed, the Note as braces');
+check(eb.items.reduce((a, x) => a + x.next.filter((n) => n.reply).length, 0) === 5 && eb.items.find((x) => x.title === 'Not handled here').type === 'note', 'Mermaid round trip: replies and the Note come back');
+const io2 = require('../assets/mp-io.js'), en = { root: { title: 'Escalation', notes: '', special: [], props: {}, kids: esc.steps.map((x) => x.id) } };
+esc.steps.forEach((x) => { en[x.id] = { title: x.title, notes: x.notes || '', special: [], type: x.type, props: Object.assign({}, x.group ? { group: x.group } : {}, x.showNotes ? { show_notes: true } : {}), kids: [] }; });
+const et = io2.write((id) => en[id], 'root', { name: (t) => NAMES[t], exits: (id) => esc.flows.filter((f) => f.from === id).map((f) => ({ label: f.label, to_title: en[f.to].title, reply: f.reply })) });
+const er = io2.parse(et, 'flowchart');
+check(et.indexOf('! Reply: Answer -> Level 1 - First line') > 0 && et.indexOf('! Group: Head office') > 0 && et.indexOf('! Show notes: yes') > 0, 'outline out: Reply, Group and Show notes lines');
+check(er.items.reduce((a, x) => a + x.next.filter((n) => n.reply).length, 0) === 5 && er.items[3].props.group === 'Head office' && er.items[1].props.show_notes === true, 'outline round trip: the same replies, group and notes setting');
+
 // 10. The starters (templates/flowchart-*.json): every one passes the check with no problem and no warning
 const fs = require('node:fs');
 for (const f of fs.readdirSync(new URL('../templates/', import.meta.url)).filter((x) => /^flowchart-.*\.json$/.test(x))) {
   const t = JSON.parse(fs.readFileSync(new URL('../templates/' + f, import.meta.url), 'utf8'));
-  const m2 = { lanes: t.lanes || [], steps: t.items.map((x, i) => ({ id: x.key, title: x.title, type: x.type, lane: (x.props || {}).lane || '', order: i })),
-    flows: t.items.flatMap((x) => (x.next || []).map((n, j) => ({ id: x.key + '>' + n.to, from: x.key, to: n.to, label: n.label || '', order: j }))) };
+  const m2 = { style: t.style || 'flowchart', lanes: t.lanes || [], steps: t.items.map((x, i) => ({ id: x.key, title: x.title, type: x.type, lane: (x.props || {}).lane || '', order: i })),
+    flows: t.items.flatMap((x) => (x.next || []).map((n, j) => ({ id: x.key + '>' + n.to, from: x.key, to: n.to, label: n.label || '', order: j, reply: !!n.reply }))) };
   const r = fc.check(m2);
   check(t.kind === 'flowchart' && !r.some((x) => x.level !== 'info'), 'starter ' + f + ': no problem, no warning' + (r.length ? ' (' + r.map((x) => x.text).join(' / ') + ')' : ''));
   check(JSON.stringify(t).indexOf('http') < 0, 'starter ' + f + ': no address in it');

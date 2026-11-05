@@ -6,7 +6,7 @@ Colour **rose**, icon **`map`**, order after Projects.
 ## What it does
 The team's Maps tool from Thinkneering, improved while it moves. A map is a tree of branches with notes, special notes and
 links. Four kinds: **knowledge** (product or process understanding), **flowchart** (steps in ISO 5807 shapes joined by
-arrows, in lanes; built), **piping** (step 4) and **wiring** (step 5).
+arrows, in lanes; set as a **Flowchart** or a **Process flow**; built), **piping** (step 4) and **wiring** (step 5).
 No AI, no pictures. Started empty: nothing is migrated; a person carries a map across by hand with the old tool's Export
 and this tile's Import.
 
@@ -39,12 +39,14 @@ All in schema `maps`, RLS on, no policies; the browser reaches it only through t
   why, the version it was sent back at), version, trash columns. In a flowchart every step sits under the centre.
 - `maps.lines` - links between branches (`link`, with a meaning), web links (`web`, https only), links to a page of
   another tile (`tile`, target `<tile-id>/<path>`, opened at `/<tile-id>/...`), flowchart arrows (`flow`, same map,
-  label = the answer, up to 40); `pipe`, `wire`, `control` are allowed by the table for later steps. Deleting a branch hides its lines; purging it deletes them.
+  label = the answer, up to 40; rel `next`, or `reply` for an answer back, drawn dashed beside it; never to or from a
+  Note); `pipe`, `wire`, `control` are allowed by the table for later steps. Deleting a branch hides its lines; purging it deletes them.
 - `maps.history` - every change: who, when, before, after. Typing in one branch for up to 10 minutes is one entry.
 - `maps.types` - branch types and the properties each takes. Step 1: `general` with `layout` (tree | columns). 002:
   flowchart shapes `start`, `end`, `process`, `decision`, `data` (Input / Output), `document`, `manual`, `delay` (Wait),
   `subprocess`, `connector`, each with `lane` (text, up to 40). 003: `general` also takes `lanes` (a list, up to 12 x 40):
-  the lanes of a flowchart in order, kept on its centre.
+  the lanes of a flowchart in order, kept on its centre. 005: every shape also takes `group` (text, up to 40) and
+  `show_notes` (bool); a `note` shape (no properties); `general` takes `style` (`flowchart` | `process`).
 No foreign key to `core.profiles` or `auth.users`: rows keep the user id and the name at the time; pages show the current
 name through `core.display_names`.
 
@@ -117,6 +119,10 @@ Positions are set from code (`node.style.left`), never `style=""` in markup. Col
   night). Not part of the delivery to Supabase; `seed-local.sql` is never run on a Supabase project.
 
 ## Decisions
+- 2026-11-05 (owner) - **Process flow**: a flowchart may be set as a process flow (e.g. an escalation ladder). It adds
+  reply arrows, notes shown in the box, a Note shape, groups with a bracket; Start and End become optional. A starter
+  with two boxes only. Mermaid dashed arrows are replies; braces are Notes. A reply has no part in the order top to
+  bottom, the checks or the ways through; it is drawn beside the arrow it answers when there is one.
 - 2026-11-05 (owner) - Steps 2 and 3 delivered together, flowcharts first in the work.
 - 2026-11-05 - A flowchart's steps are flat under its centre; the arrows are `flow` lines, so steps may branch, join and
   loop. A Decision's exit most nearly straight below leaves at the bottom, the others from the sides; loops go round on

@@ -2,7 +2,11 @@
    (window.MP.fc) and in node (dev/flowchart-check.mjs, worked examples).
    A flowchart: steps (branches under the centre) in ISO 5807 shapes, each in a lane (swimlane), and arrows ('flow'
    lines) from one step to the next, labelled with the answer when a decision branches.
-     model  { steps: [{ id, title, type, lane, place, order }], flows: [{ id, from, to, label, order }], lanes: [names] }
+     model  { steps: [{ id, title, type, lane, place, order, notes, showNotes, group }],
+              flows: [{ id, from, to, label, order, reply }], lanes: [names], style: 'flowchart' | 'process' }
+     A reply arrow (dashed) answers an arrow the other way and is drawn beside it; a Note stands beside the chart with
+     no arrows; a step may show its notes in its box; steps may share a group (a bracket beside them).
+     style 'process' (a process flow, e.g. an escalation ladder): Start and End are optional and steps may branch.
      layout(model)  where every step and arrow is drawn: top to bottom, lanes as columns, right-angled arrows;
                     a step with a place (drag to place) stays where it was put.
      check(model)   what is wrong or worth a look: errors, warnings, information.
@@ -22,8 +26,11 @@
     { id: 'manual', name: 'Manual step', w: 190, h: 56, chars: 20 },
     { id: 'delay', name: 'Wait', w: 170, h: 52, chars: 20 },
     { id: 'subprocess', name: 'Sub-process', w: 190, h: 56, chars: 20 },
-    { id: 'connector', name: 'Connector', w: 52, h: 52, chars: 4 }
+    { id: 'connector', name: 'Connector', w: 52, h: 52, chars: 4 },
+    { id: 'note', name: 'Note (beside the chart)', w: 260, h: 56, chars: 30 }
   ];
+  // shapes that may show their notes inside the box
+  var SHOWABLE = { process: 1, data: 1, document: 1, manual: 1, delay: 1, subprocess: 1 };
   var BY = {}; SHAPES.forEach(function (s) { BY[s.id] = s; });
   function shape(type) { return BY[type] || BY.process; }
   var LINE = 16, ROWGAP = 64, COLGAP = 44, LANEPAD = 24, HEAD = 44, MARGIN = 30, LOOPGAP = 26, LOOPSTEP = 14;
@@ -38,22 +45,53 @@
     if (cur) out.push(cur);
     return out.length ? out : [''];
   }
+  // notes as lines for a box: one line per line written, "- " or "• " lines as bullets, long lines wrapped
+  var NLINE = 15;
+  function noteLines(text, n) {
+    var out = [];
+    String(text || '').replace(/\r/g, '').split('\n').forEach(function (raw) {
+      var t = raw.trim(); if (!t) return;
+      var bullet = /^([-*•·]|\d+[.)])\s+/.test(t);
+      if (bullet) t = t.replace(/^([-*•·]|\d+[.)])\s+/, '');
+      wrap(t, n - 2).forEach(function (l, i) { out.push((bullet ? (i ? '   ' : '• ') : '') + l); });
+    });
+    return out;
+  }
+  function boxed(step) { return step.type === 'note' || (!!step.showNotes && !!String(step.notes || '').trim() && !!SHOWABLE[step.type]); }
   function sizeOf(step) {
-    var s = shape(step.type), lines = wrap(step.title, s.chars);
+    var s = shape(step.type), lines;
+    if (boxed(step)) {
+      // a card: the name on top, the notes under it, in two columns when there are many lines
+      var raw = noteLines(step.notes, 40), cols = raw.length > 8 ? 2 : 1;
+      if (cols === 2) raw = noteLines(step.notes, 32);
+      var w = step.type === 'note' ? (cols === 2 ? 440 : 260) : (cols === 2 ? 460 : 300);
+      var tl = wrap(step.title, Math.floor((w - 32) / 7.6));
+      if (tl.length > 3) { tl = tl.slice(0, 3); tl[2] = tl[2].replace(/.?$/, '…'); }
+      var rows = Math.ceil(raw.length / cols), MAXR = 16;
+      if (rows > MAXR) { raw = raw.slice(0, MAXR * cols); raw[raw.length - 1] = '…'; rows = MAXR; }
+      var parts = []; for (var c = 0; c < cols; c++) parts.push(raw.slice(c * rows, (c + 1) * rows));
+      var h = 14 + tl.length * LINE + (raw.length ? 12 + rows * NLINE : 0) + 12;
+      return { w: w, h: Math.max(s.h, h), lines: tl, notes: parts, card: true };
+    }
+    lines = wrap(step.title, s.chars);
     if (lines.length > 6) { lines = lines.slice(0, 6); lines[5] = lines[5].replace(/.?$/, '…'); }
     var h = step.type === 'decision' ? Math.max(s.h, lines.length * LINE + 52) : step.type === 'connector' ? s.h : Math.max(s.h, lines.length * LINE + 24);
     return { w: s.w, h: h, lines: lines };
   }
 
   // ---------- the graph ----------
+  // Notes stand apart (no arrows, no checks). Reply arrows answer an arrow the other way: they take no part in the
+  // order top to bottom, the checks or the ways through.
   function graph(model) {
-    var steps = (model.steps || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+    var sorted = (model.steps || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+    var notes = sorted.filter(function (s) { return s.type === 'note'; }), steps = sorted.filter(function (s) { return s.type !== 'note'; });
     var ids = {}, out = {}, inc = {};
     steps.forEach(function (s) { ids[s.id] = s; out[s.id] = []; inc[s.id] = []; });
-    var flows = (model.flows || []).filter(function (f) { return ids[f.from] && ids[f.to] && f.from !== f.to; })
+    var all = (model.flows || []).filter(function (f) { return ids[f.from] && ids[f.to] && f.from !== f.to; })
       .sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+    var flows = all.filter(function (f) { return !f.reply; }), replies = all.filter(function (f) { return !!f.reply; });
     flows.forEach(function (f) { out[f.from].push(f); inc[f.to].push(f); });
-    return { steps: steps, by: ids, out: out, inc: inc, flows: flows };
+    return { steps: steps, notes: notes, by: ids, out: out, inc: inc, flows: flows, replies: replies, all: all };
   }
   // Depth first from the Starts (then from steps nothing leads to, then the rest): arrows back to a step on the
   // current way are loops ("back"); the others give the order top to bottom.
@@ -104,7 +142,7 @@
     });
     Object.keys(cells).forEach(function (k) { cells[k].sort(function (a, b) { return pos[a] - pos[b]; }); });
     var colW = 0;
-    g.steps.forEach(function (s) { var z = sizeOf(s); nodes[s.id] = { id: s.id, type: s.type || 'process', w: z.w, h: z.h, lines: z.lines, lane: lanes.key(s), rank: rank[s.id] }; colW = Math.max(colW, z.w); });
+    g.steps.forEach(function (s) { var z = sizeOf(s); nodes[s.id] = { id: s.id, type: s.type || 'process', w: z.w, h: z.h, lines: z.lines, notes: z.notes, card: z.card, lane: lanes.key(s), rank: rank[s.id] }; colW = Math.max(colW, z.w); });
     colW = Math.max(colW, 190) + COLGAP;
     // lane widths: the most steps side by side in any rank of that lane
     var laneBox = [], x = 0;
@@ -129,18 +167,42 @@
         });
       }
     });
+    // notes: a column to the right of the chart, in their order
+    var nx = x + (g.notes.length ? 40 : 0), ny = lanes.shown ? HEAD + 16 : 0, notesRight = x;
+    g.notes.forEach(function (s) {
+      var z = sizeOf(s);
+      nodes[s.id] = { id: s.id, type: 'note', w: z.w, h: z.h, lines: z.lines, notes: z.notes, card: true, lane: '', rank: -1, x: nx, y: ny };
+      ny += z.h + 20; notesRight = Math.max(notesRight, nx + z.w);
+    });
     // a step put somewhere by hand stays there
-    g.steps.forEach(function (s) {
+    g.steps.concat(g.notes).forEach(function (s) {
       var p = s.place;
       if (p && typeof p.x === 'number' && typeof p.y === 'number') { nodes[s.id].x = Math.round(p.x); nodes[s.id].y = Math.round(p.y); nodes[s.id].placed = true; }
     });
     // the drawing's box
-    var minX = 0, minY = 0, maxX = x, maxY = Math.max(y - ROWGAP, lanes.shown ? HEAD + 40 : 40);
+    var minX = 0, minY = 0, maxX = Math.max(x, notesRight), maxY = Math.max(y - ROWGAP, lanes.shown ? HEAD + 40 : 40);
     Object.keys(nodes).forEach(function (id) { var n = nodes[id]; minX = Math.min(minX, n.x); minY = Math.min(minY, n.y); maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h); });
     var edges = route(g, nodes, w.back);
-    edges.forEach(function (e) { maxX = Math.max(maxX, e.maxX); maxY = Math.max(maxY, e.maxY); minY = Math.min(minY, e.minY); });
+    replies(g, nodes, edges);
+    edges.forEach(function (e) { maxX = Math.max(maxX, e.maxX); maxY = Math.max(maxY, e.maxY); minY = Math.min(minY, e.minY); minX = Math.min(minX, e.minX); });
+    // groups: a bracket on the left of the steps that share one, with its name
+    var groups = [], seenG = {};
+    g.steps.forEach(function (s) {
+      var k = String(s.group || '').trim(); if (!k || seenG[k.toLowerCase()]) return;
+      seenG[k.toLowerCase()] = true;
+      var mem = g.steps.filter(function (t) { return String(t.group || '').trim().toLowerCase() === k.toLowerCase(); }).map(function (t) { return nodes[t.id]; });
+      var x0 = Math.min.apply(null, mem.map(function (n) { return n.x; })), y1 = Math.min.apply(null, mem.map(function (n) { return n.y; })),
+        y2 = Math.max.apply(null, mem.map(function (n) { return n.y + n.h; }));
+      var gx = x0 - 22;
+      groups.forEach(function (o) { if (o.y1 < y2 + 10 && o.y2 > y1 - 10 && Math.abs(o.x - gx) < 34) gx = o.x - 34; });
+      groups.push({ name: k, x: gx, y1: y1 - 4, y2: y2 + 4 });
+      minX = Math.min(minX, gx - k.length * 7.5 - 16);
+    });
+    // a legend when there are replies
+    var legend = null;
+    if (g.replies.length) { legend = { x: minX, y: maxY + 34 }; maxY += 50; maxX = Math.max(maxX, minX + 360); }
     return {
-      nodes: nodes, edges: edges, colW: colW,
+      nodes: nodes, edges: edges, colW: colW, groups: groups, legend: legend,
       lanes: lanes.shown ? laneBox.map(function (L) { return { name: L.name, x: L.x, w: L.w }; }) : [],
       box: { x: minX - MARGIN, y: minY - MARGIN, w: maxX - minX + MARGIN * 2, h: maxY - minY + MARGIN * 2 },
       back: w.back
@@ -207,11 +269,65 @@
         var d = 'M' + pts.map(function (p) { return Math.round(p[0]) + ' ' + Math.round(p[1]); }).join('L');
         var xs = pts.map(function (p) { return p[0]; }), ys = pts.map(function (p) { return p[1]; });
         edges.push({ id: f.id, from: f.from, to: f.to, label: f.label || '', d: d, pts: pts, lx: Math.round(lx), ly: Math.round(ly), anchor: anchor, back: isBack,
-          clear: cost(all, skip, pts) === 0,
-          maxX: Math.max.apply(null, xs) + (f.label ? f.label.length * 7 : 0), maxY: Math.max.apply(null, ys), minY: Math.min.apply(null, ys) - 14 });
+          clear: cost(all, skip, pts) === 0, reply: !!f.reply,
+          maxX: Math.max.apply(null, xs) + (f.label ? f.label.length * 7 : 0), maxY: Math.max.apply(null, ys), minY: Math.min.apply(null, ys) - 14,
+          minX: Math.min.apply(null, xs) - (f.label && anchor === 'end' ? f.label.length * 7 : 0) });
       });
     });
     return edges;
+  }
+
+  // ---------- reply arrows ----------
+  // An arrow moved sideways by d: vertical runs move across, horizontal runs move up or down; the ends stay on the boxes.
+  function shift(pts, d) {
+    return pts.map(function (p, i) {
+      var x = p[0], y = p[1];
+      [i - 1, i].forEach(function (k) {
+        if (k < 0 || k >= pts.length - 1) return;
+        var a = pts[k], b = pts[k + 1];
+        if (Math.abs(a[0] - b[0]) < 0.5) x = p[0] + d; else if (Math.abs(a[1] - b[1]) < 0.5) y = p[1] + d;
+      });
+      return [x, y];
+    });
+  }
+  // the words in the middle of the first run: on the left (side -1) or the right (side 1) of a vertical run, above or below a level one
+  function midLabel(e, pts, side) {
+    var a = pts[0], b = pts[1];
+    if (Math.abs(a[0] - b[0]) < 0.5) { e.lx = Math.round(a[0] + (side < 0 ? -7 : 7)); e.ly = Math.round((a[1] + b[1]) / 2 + 4); e.anchor = side < 0 ? 'end' : 'start'; }
+    else { e.lx = Math.round((a[0] + b[0]) / 2); e.ly = Math.round(a[1] + (side < 0 ? -7 : 15)); e.anchor = 'middle'; }
+  }
+  function remake(e, pts, all, skip) {
+    e.pts = pts;
+    e.d = 'M' + pts.map(function (p) { return Math.round(p[0]) + ' ' + Math.round(p[1]); }).join('L');
+    var xs = pts.map(function (p) { return p[0]; }), ys = pts.map(function (p) { return p[1]; }), lw = e.label ? e.label.length * 7 : 0;
+    e.maxX = Math.max(Math.max.apply(null, xs), e.lx + (e.anchor === 'start' ? lw : e.anchor === 'middle' ? lw / 2 : 0));
+    e.minX = Math.min(Math.min.apply(null, xs), e.lx - (e.anchor === 'end' ? lw : e.anchor === 'middle' ? lw / 2 : 0));
+    e.maxY = Math.max.apply(null, ys) + 16; e.minY = Math.min.apply(null, ys) - 14;
+    e.clear = cost(all, skip, pts) === 0;
+  }
+  // A reply beside the arrow it answers (that one moves a little to the left or up, the reply to the right or down);
+  // a reply with no arrow to answer is drawn like any arrow, dashed.
+  function replies(g, nodes, edges) {
+    var all = Object.keys(nodes).map(function (id) { return nodes[id]; });
+    g.replies.forEach(function (f) {
+      var a = nodes[f.from], b = nodes[f.to], pair = edges.filter(function (e) { return !e.reply && !e.paired && e.from === f.to && e.to === f.from; })[0];
+      if (pair) {
+        var orig = pair.pts;
+        pair.paired = true;
+        midLabel(pair, shift(orig, -7), -1); remake(pair, shift(orig, -7), all, [nodes[pair.from], nodes[pair.to]]);
+        var e = { id: f.id, from: f.from, to: f.to, label: f.label || '', reply: true, back: false };
+        var pts = shift(orig.slice().reverse(), 7);
+        midLabel(e, pts, 1); remake(e, pts, all, [a, b]);
+        edges.push(e);
+        return;
+      }
+      var mini = { steps: [g.by[f.from]], out: {} }, bk = {};
+      mini.out[f.from] = [f];
+      if (b.y + b.h <= a.y + 2) bk[fkey(f)] = true;
+      var one = route(mini, nodes, bk)[0];
+      one.reply = true;
+      edges.push(one);
+    });
   }
 
   // ---------- checks ----------
@@ -227,15 +343,21 @@
     return seen;
   }
   function check(model) {
-    var g = graph(model), out = [];
+    var g = graph(model), out = [], proc = model.style === 'process';
     function add(level, text, ids) { out.push({ level: level, text: text, ids: ids || [] }); }
-    if (!g.steps.length) { add('info', 'No steps yet. Add a Start, the steps, and an End.'); return out; }
+    if (!g.steps.length) { add('info', proc ? 'No boxes yet. Add them and join them with arrows.' : 'No steps yet. Add a Start, the steps, and an End.'); return out; }
     var starts = g.steps.filter(function (s) { return s.type === 'start'; }).map(function (s) { return s.id; });
-    var ends = g.steps.filter(function (s) { return s.type === 'end'; }).map(function (s) { return s.id; });
-    if (!starts.length) add('error', 'There is no Start step. Make the first step a Start.');
-    if (!ends.length) add('error', 'There is no End step. Make the last step an End.');
-    if (starts.length > 1) add('info', starts.length + ' Start steps: ' + names(g, starts) + '. Fine if the process really starts in more than one way.', starts);
-    if (starts.length) {
+    var ends = proc ? [] : g.steps.filter(function (s) { return s.type === 'end'; }).map(function (s) { return s.id; });
+    if (proc) {
+      // a process flow: Start and End are optional, steps may branch; a box joined to nothing is worth a look
+      var lone = g.steps.filter(function (s) { return !g.out[s.id].length && !g.inc[s.id].length && !g.replies.some(function (f) { return f.from === s.id || f.to === s.id; }); })
+        .map(function (s) { return s.id; });
+      if (lone.length && g.steps.length > 1) add('warning', 'Not joined to anything: ' + names(g, lone) + '. Draw an arrow, or make it a Note.', lone);
+    }
+    if (!proc && !starts.length) add('error', 'There is no Start step. Make the first step a Start.');
+    if (!proc && !ends.length) add('error', 'There is no End step. Make the last step an End.');
+    if (!proc && starts.length > 1) add('info', starts.length + ' Start steps: ' + names(g, starts) + '. Fine if the process really starts in more than one way.', starts);
+    if (starts.length && !proc) {
       var down = reach(g, starts, 'down'), lost = g.steps.filter(function (s) { return !down[s.id]; }).map(function (s) { return s.id; });
       if (lost.length) add('warning', 'Not reached from a Start: ' + names(g, lost) + '. Draw an arrow into ' + (lost.length > 1 ? 'them' : 'it') + ', or delete ' + (lost.length > 1 ? 'them' : 'it') + '.', lost);
     }
@@ -243,7 +365,7 @@
       var up = reach(g, ends, 'up'), dead = g.steps.filter(function (s) { return !up[s.id]; }).map(function (s) { return s.id; });
       if (dead.length) add('error', 'Dead end: no way from ' + names(g, dead) + ' to an End.', dead);
     }
-    starts.forEach(function (id) { if (g.inc[id].length) add('warning', 'An arrow goes into the Start ' + title(g, id) + '. Loop back to the step after it instead.', [id]); });
+    if (!proc) starts.forEach(function (id) { if (g.inc[id].length) add('warning', 'An arrow goes into the Start ' + title(g, id) + '. Loop back to the step after it instead.', [id]); });
     ends.forEach(function (id) { if (g.out[id].length) add('warning', 'The End ' + title(g, id) + ' has an arrow out of it. An End finishes the flow.', [id]); });
     g.steps.forEach(function (s) {
       var ex = g.out[s.id];
@@ -254,7 +376,7 @@
         var seen = {}, twice = false;
         ex.forEach(function (f) { var k = String(f.label || '').trim().toLowerCase(); if (k && seen[k]) twice = true; seen[k] = true; });
         if (twice) add('error', 'Two exits of the decision ' + title(g, s.id) + ' have the same answer.', [s.id]);
-      } else if (s.type !== 'end' && ex.length > 1) {
+      } else if (!proc && s.type !== 'end' && ex.length > 1) {
         add('warning', title(g, s.id) + ' has ' + ex.length + ' exits. Only a Decision should branch: make it a Decision, or keep one exit.', [s.id]);
       }
     });
@@ -293,7 +415,7 @@
     rect: 'process', rounded: 'process', process: 'process', proc: 'process', event: 'process', subproc: 'subprocess', subprocess: 'subprocess',
     'fr-rect': 'subprocess', framed: 'subprocess', circle: 'connector', circ: 'connector', 'sm-circ': 'connector', 'small-circle': 'connector',
     manual: 'manual', 'manual-input': 'manual', 'trap-t': 'manual', 'trap-b': 'manual', 'sl-rect': 'manual', 'h-cyl': 'data', cyl: 'data',
-    database: 'data', db: 'data', start: 'start', stop: 'end', 'f-circ': 'end'
+    database: 'data', db: 'data', start: 'start', stop: 'end', 'f-circ': 'end', braces: 'note', comment: 'note', note: 'note', 'brace-r': 'note', brace: 'note'
   };
   var OPEN = [ // longest first
     ['(((', ')))', 'terminal'], ['([', '])', 'terminal'], ['[[', ']]', 'subprocess'], ['[(', ')]', 'data'], ['((', '))', 'circle'],
@@ -341,9 +463,9 @@
   function parseEdge(s, i) {
     var r = s.slice(i), m;
     m = /^\s*(<?)(-{2,}>|-{3,}|-\.+->|-\.+-|={2,}>|={3,}|-{2,}[ox]|={2,}[ox])\s*(?:\|([^|]*)\|)?/.exec(r);
-    if (m) return { label: m[3] != null ? unq(m[3]) : '', both: !!m[1], end: i + m[0].length };
+    if (m) return { label: m[3] != null ? unq(m[3]) : '', both: !!m[1], dashed: m[2].indexOf('.') >= 0, end: i + m[0].length };
     m = /^\s*(<?)(--|-\.|==)\s+(.+?)\s+(-{2,}>|\.+->|={2,}>|-{3,}|\.+-|={3,})/.exec(r);
-    if (m) return { label: unq(m[3]), both: !!m[1], end: i + m[0].length };
+    if (m) return { label: unq(m[3]), both: !!m[1], dashed: m[2] === '-.', end: i + m[0].length };
     return null;
   }
   function parseMermaid(text) {
@@ -392,8 +514,8 @@
         var next = group();
         if (!next.length) { ok = false; break; }
         prev.forEach(function (a) { next.forEach(function (b) {
-          seenE.push({ from: a.id, to: b.id, label: e.label });
-          if (e.both) seenE.push({ from: b.id, to: a.id, label: e.label });
+          seenE.push({ from: a.id, to: b.id, label: e.label, reply: e.dashed });
+          if (e.both) seenE.push({ from: b.id, to: a.id, label: e.label, reply: e.dashed });
         }); });
         prev = next;
       }
@@ -414,25 +536,28 @@
         else if (/^(end|stop|finish|done|exit|complete)/i.test(title) || /\b(end|stop)$/i.test(title)) type = 'end';
         else type = !incoming[id] ? 'start' : !outgoing[id] ? 'end' : 'process';
       }
-      return { key: id, title: title, type: type, props: x.lane ? { lane: x.lane } : {}, next: [] };
+      return { key: id, title: title, type: type, props: x.lane && type !== 'note' ? { lane: x.lane } : {}, next: [] };
     });
     var byKey = {}, pairs = {};
     items.forEach(function (it) { byKey[it.key] = it; });
     edges.forEach(function (e) {
       if (e.from === e.to) return;
+      if (byKey[e.from].type === 'note' || byKey[e.to].type === 'note') { warn.push('A Note stands beside the chart: the arrow to or from "' + byKey[byKey[e.from].type === 'note' ? e.from : e.to].title + '" is left out.'); return; }
       var k = e.from + '>' + e.to;
       if (pairs[k]) { warn.push('Two arrows from ' + byKey[e.from].title + ' to ' + byKey[e.to].title + ': the first one is kept.'); return; }
       pairs[k] = true;
       var it = byKey[e.from];
       if (it.next.length >= 20) { warn.push(it.title + ' has more than 20 exits: the rest are left out.'); return; }
-      it.next.push({ to: e.to, label: e.label.slice(0, 40) });
+      var nx = { to: e.to, label: e.label.slice(0, 40) };
+      if (e.reply) nx.reply = true;                       // a dashed arrow (-.->) is a reply
+      it.next.push(nx);
     });
     return { items: items, lanes: lanes.slice(0, 12), warnings: warn };
   }
   function mq(t) { return '"' + String(t || '').replace(/&/g, '#amp;').replace(/"/g, '#quot;').replace(/</g, '#lt;').replace(/>/g, '#gt;') + '"'; }
   function writeMermaid(model) {
     var g = graph(model), ids = {}, out = ['flowchart TD'], lanes = lanesOf(model, g);
-    g.steps.forEach(function (s, i) { ids[s.id] = 'n' + (i + 1); });
+    g.steps.concat(g.notes).forEach(function (s, i) { ids[s.id] = 'n' + (i + 1); });
     function nodeText(s) {
       var t = mq(s.title), id = ids[s.id];
       switch (s.type) {
@@ -444,6 +569,7 @@
         case 'connector': return id + '((' + t + '))';
         case 'document': return id + '@{ shape: doc, label: ' + t + ' }';
         case 'delay': return id + '@{ shape: delay, label: ' + t + ' }';
+        case 'note': return id + '@{ shape: braces, label: ' + t + ' }';
         default: return id + '[' + t + ']';
       }
     }
@@ -457,11 +583,13 @@
         out.push('  end');
       });
     } else g.steps.forEach(function (s) { out.push('  ' + nodeText(s)); });
-    g.flows.forEach(function (f) { out.push('  ' + ids[f.from] + ' -->' + (f.label ? '|' + mq(f.label) + '|' : '') + ' ' + ids[f.to]); });
+    g.notes.forEach(function (s) { out.push('  ' + nodeText(s)); });
+    // replies are dashed arrows (-.->)
+    g.all.forEach(function (f) { out.push('  ' + ids[f.from] + (f.reply ? ' -.->' : ' -->') + (f.label ? '|' + mq(f.label) + '|' : '') + ' ' + ids[f.to]); });
     return out.join('\n') + '\n';
   }
 
-  var api = { SHAPES: SHAPES, shape: shape, wrap: wrap, sizeOf: sizeOf, layout: layout, check: check, paths: paths,
+  var api = { SHAPES: SHAPES, SHOWABLE: SHOWABLE, shape: shape, wrap: wrap, sizeOf: sizeOf, layout: layout, check: check, paths: paths,
     mermaid: { parse: parseMermaid, write: writeMermaid } };
   if (root.MP) root.MP.fc = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

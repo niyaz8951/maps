@@ -1,0 +1,31 @@
+{
+  "name": "Process flow",
+  "kind": "flowchart",
+  "style": "process",
+  "about": "Two boxes joined by an arrow down and a dashed reply back, to build a process flow such as an escalation ladder. Rename them and add the rest. Everything it adds comes in \"to verify\".",
+  "items": [
+    {
+      "key": "a",
+      "title": "Level 1",
+      "type": "process",
+      "next": [
+        {
+          "to": "b",
+          "label": "Escalate"
+        }
+      ]
+    },
+    {
+      "key": "b",
+      "title": "Level 2",
+      "type": "process",
+      "next": [
+        {
+          "to": "a",
+          "label": "Answer",
+          "reply": true
+        }
+      ]
+    }
+  ]
+}

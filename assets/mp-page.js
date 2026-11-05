@@ -8,7 +8,7 @@
   function head() {
     var m = MP.M.map;
     $('mp-title').textContent = m.name; Core.setTitle(m.name + ' - Maps');
-    $('mp-sub').textContent = [MP.KIND[m.kind] + (m.kind === 'flowchart' ? '' : ' map'), m.mine ? 'yours' : 'by ' + m.owner, MP.SHARE[m.share], m.right === 'read' ? 'you can read it' : null,
+    $('mp-sub').textContent = [m.kind === 'flowchart' ? (MP.flowStyle() === 'process' ? 'Process flow' : 'Flowchart') : MP.KIND[m.kind] + ' map', m.mine ? 'yours' : 'by ' + m.owner, MP.SHARE[m.share], m.right === 'read' ? 'you can read it' : null,
       'changed ' + Core.date(m.updated_at) + (m.updated_by ? ' by ' + m.updated_by : '')].filter(Boolean).join(' · ');
     $('mp-mode').hidden = !MP.canEdit();
     $('mp-import').hidden = !(MP.canEdit() && st.edit);
@@ -35,7 +35,7 @@
     Core.clear(p);
     if (st.q) p.appendChild(el('span', { class: 'badge accent', text: hits + ' found' }));
     p.appendChild(el('span', { class: 'badge', text: flow ? MP.plural(b - 1, 'step') : MP.plural(b - 1, 'branch', 'branches') }));
-    if (flow) p.appendChild(el('span', { class: 'badge', text: MP.plural(MP.M.lines.filter(function (l) { return l.kind === 'flow' && N(l.from) && N(l.to); }).length, 'arrow') }));
+    if (flow) p.appendChild(el('span', { class: 'badge', text: MP.plural(MP.M.lines.filter(function (l) { return l.kind === 'flow' && N(l.from) && N(l.to) && N(l.from).type !== 'note' && N(l.to).type !== 'note'; }).length, 'arrow') }));
     if (s) p.appendChild(el('span', { class: 'badge', text: MP.plural(s, 'special note') }));
     if (tv || ch) p.appendChild(el('button', { type: 'button', class: 'badge warning mp-badgebtn', title: 'Show the first one',
       text: [tv ? tv + ' to verify' : null, ch ? ch + ' changed since verified' : null].filter(Boolean).join(' · '),

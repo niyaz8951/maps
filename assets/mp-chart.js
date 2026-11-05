@@ -26,15 +26,21 @@
     var root = N(MP.M.root), steps = root.kids.map(function (id, i) {
       var n = N(id), p = n.place;
       if (over && over.id === id) p = over.place;
-      return { id: id, title: n.title, type: n.type || 'process', lane: (n.props && n.props.lane) || '', place: p, order: i };
+      var pr = n.props || {};
+      return { id: id, title: n.title, type: n.type || 'process', lane: pr.lane || '', place: p, order: i,
+        notes: n.notes || '', showNotes: !!pr.show_notes, group: pr.group || '' };
     });
     var flows = MP.M.lines.filter(function (l) { return l.kind === 'flow' && N(l.from) && N(l.to); })
-      .map(function (l) { return { id: l.id, from: l.from, to: l.to, label: l.label || '', order: l.sort }; });
-    return { steps: steps, flows: flows, lanes: (root.props && root.props.lanes) || [] };
+      .map(function (l) { return { id: l.id, from: l.from, to: l.to, label: l.label || '', order: l.sort, reply: l.rel === 'reply' }; });
+    return { steps: steps, flows: flows, lanes: (root.props && root.props.lanes) || [], style: MP.flowStyle() };
   }
   MP.flowModel = model;
-  function exitsOf(id) { return MP.M.lines.filter(function (l) { return l.kind === 'flow' && l.from === id && N(l.to); }); }
-  function intoOf(id) { return MP.M.lines.filter(function (l) { return l.kind === 'flow' && l.to === id && N(l.from); }); }
+  // the kind of chart: a flowchart (Start to End) or a process flow (escalation ladder ...), kept on the centre
+  MP.flowStyle = function () { var r = MP.M && N(MP.M.root); return r && r.props && r.props.style === 'process' ? 'process' : 'flowchart'; };
+  // arrows out of and into a step (a Note has none: arrows of a step made a Note are left out)
+  function joined(l) { return N(l.from) && N(l.to) && N(l.from).type !== 'note' && N(l.to).type !== 'note'; }
+  function exitsOf(id) { return MP.M.lines.filter(function (l) { return l.kind === 'flow' && l.from === id && joined(l); }); }
+  function intoOf(id) { return MP.M.lines.filter(function (l) { return l.kind === 'flow' && l.to === id && joined(l); }); }
   MP.exitsOf = exitsOf; MP.intoOf = intoOf;
 
   // ---------- one shape ----------
@@ -48,13 +54,15 @@
       case 'document': return 'M' + x + ' ' + y + 'H' + (x + w) + 'V' + (y + h - 8) + 'C' + (x + w * 0.75) + ' ' + (y + h - 20) + ' ' + (x + w * 0.6) + ' ' + (y + h + 4) + ' ' + (x + w / 2) + ' ' + (y + h - 6) +
         'C' + (x + w * 0.4) + ' ' + (y + h - 16) + ' ' + (x + w * 0.2) + ' ' + (y + h + 6) + ' ' + x + ' ' + (y + h - 6) + 'Z';
       case 'delay': return 'M' + x + ' ' + y + 'H' + (x + w - r) + 'A' + r + ' ' + r + ' 0 0 1 ' + (x + w - r) + ' ' + (y + h) + 'H' + x + 'Z';
+      case 'note': return 'M' + x + ' ' + y + 'H' + (x + w - 14) + 'L' + (x + w) + ' ' + (y + 14) + 'V' + (y + h) + 'H' + x + 'Z';
       case 'connector': return 'M' + (x + w / 2) + ' ' + y + 'A' + (w / 2) + ' ' + (h / 2) + ' 0 1 1 ' + (x + w / 2 - 0.01) + ' ' + y + 'Z';
       default: return 'M' + (x + 8) + ' ' + y + 'H' + (x + w - 8) + 'Q' + (x + w) + ' ' + y + ' ' + (x + w) + ' ' + (y + 8) + 'V' + (y + h - 8) + 'Q' + (x + w) + ' ' + (y + h) + ' ' + (x + w - 8) + ' ' + (y + h) +
         'H' + (x + 8) + 'Q' + x + ' ' + (y + h) + ' ' + x + ' ' + (y + h - 8) + 'V' + (y + 8) + 'Q' + x + ' ' + y + ' ' + (x + 8) + ' ' + y + 'Z';
     }
   }
   // INK: fixed colours for a file or a print (an SVG file carries no theme)
-  var INK = { line: '#55606B', text: '#1B2430', fill: '#FFFFFF', soft: '#EEF2F6', lane: '#F6F8FA', laneLine: '#D5DCE3', accent: '#3B4754' };
+  var INK = { line: '#55606B', text: '#1B2430', text2: '#4A5562', fill: '#FFFFFF', soft: '#EEF2F6', lane: '#F6F8FA', laneLine: '#D5DCE3', accent: '#3B4754', note: '#FFF8E6' };
+  var FONT = 'Segoe UI, Arial, sans-serif';
 
   // draw(svg, layout, opts): lanes, arrows, steps. opts.ink: fixed colours; opts.live: marks and handles for the page.
   function draw(svg, L, opts) {
@@ -74,14 +82,22 @@
       var t = svgEl('text', { x: ln.x + ln.w / 2, y: L.box.y + 28, class: 'fc-lane-t', 'text-anchor': 'middle', fill: ink ? INK.text : null }, g);
       t.textContent = ln.name || 'No lane';
     });
+    // groups: a bracket beside the steps that share one, with its name
+    var gg = svgEl('g', { class: 'fc-groups' }, svg);
+    (L.groups || []).forEach(function (gr) {
+      svgEl('path', { d: 'M' + (gr.x + 10) + ' ' + gr.y1 + 'H' + gr.x + 'V' + gr.y2 + 'H' + (gr.x + 10), class: 'fc-group', fill: 'none', stroke: ink ? INK.text2 : null, 'stroke-width': ink ? '1.6' : null }, gg);
+      var t = svgEl('text', { x: gr.x - 8, y: (gr.y1 + gr.y2) / 2 + 4, 'text-anchor': 'end', class: 'fc-group-t', fill: ink ? INK.text2 : null,
+        'font-size': ink ? '12' : null, 'font-weight': ink ? '750' : null, 'font-family': ink ? FONT : null }, gg);
+      t.textContent = gr.name;
+    });
     // arrows
     var walk = opts.live && st.walk ? st.walk : null, onPath = {}, onEdge = {};
     if (walk) { walk.path.forEach(function (id) { onPath[id] = 1; }); walk.flows.forEach(function (id) { onEdge[id] = 1; }); }
     var eg = svgEl('g', { class: 'fc-edges' }, svg), labels = svgEl('g', { class: 'fc-labels' }, svg);
     L.edges.forEach(function (e) {
       var on = !!onEdge[e.id];
-      svgEl('path', { d: e.d, class: 'fc-edge' + (e.back ? ' back' : '') + (on ? ' on' : ''), 'marker-end': 'url(#' + pre + (on ? '-arrow-on' : '-arrow') + ')',
-        fill: 'none', stroke: ink ? INK.line : null, 'stroke-width': ink ? '1.6' : null, 'stroke-dasharray': ink && e.back ? '6 4' : null }, eg);
+      svgEl('path', { d: e.d, class: 'fc-edge' + (e.reply ? ' reply' : '') + (on ? ' on' : ''), 'marker-end': 'url(#' + pre + (on ? '-arrow-on' : '-arrow') + ')',
+        fill: 'none', stroke: ink ? INK.line : null, 'stroke-width': ink ? '1.6' : null, 'stroke-dasharray': ink && e.reply ? '6 4' : null }, eg);
       if (e.label) {
         var t = svgEl('text', { x: e.lx, y: e.ly, 'text-anchor': e.anchor, class: 'fc-lab' + (on ? ' on' : ''), 'data-flow': opts.live ? e.id : null,
           fill: ink ? INK.text : null, stroke: ink ? INK.fill : null, 'stroke-width': ink ? '4' : null, 'paint-order': ink ? 'stroke' : null,
@@ -108,18 +124,37 @@
         'aria-label': opts.live ? (MP.SHAPE_NAME[b.type] || 'Step') + ': ' + n.title + (n.status === 'verified' ? '' : ', ' + MP.statusWord(n).toLowerCase()) : null }, sg);
       if (opts.live) { var tt = svgEl('title', {}, g); tt.textContent = (MP.SHAPE_NAME[b.type] || 'Step') + (n.props && n.props.lane ? ' · ' + n.props.lane : '') + (n.notes ? '\n' + n.notes.slice(0, 300) : ''); }
       svgEl('path', { d: shapePath(b.type, b.x, b.y, b.w, b.h), class: 'fc-shape',
-        fill: ink ? (b.type === 'start' || b.type === 'end' ? INK.soft : INK.fill) : null, stroke: ink ? INK.accent : null, 'stroke-width': ink ? '1.6' : null }, g);
+        fill: ink ? (b.type === 'start' || b.type === 'end' ? INK.soft : b.type === 'note' ? INK.note : INK.fill) : null, stroke: ink ? INK.accent : null, 'stroke-width': ink ? '1.6' : null }, g);
+      if (b.type === 'note') svgEl('path', { d: 'M' + (b.x + b.w - 14) + ' ' + b.y + 'V' + (b.y + 14) + 'H' + (b.x + b.w), class: 'fc-shape fc-inner', fill: 'none', stroke: ink ? INK.accent : null, 'stroke-width': ink ? '1.2' : null }, g);
       if (b.type === 'subprocess') {
         svgEl('path', { d: 'M' + (b.x + 10) + ' ' + b.y + 'V' + (b.y + b.h) + 'M' + (b.x + b.w - 10) + ' ' + b.y + 'V' + (b.y + b.h), class: 'fc-shape fc-inner', fill: 'none', stroke: ink ? INK.accent : null, 'stroke-width': ink ? '1.4' : null }, g);
       }
-      var lines = b.lines, lh = 16, ty = b.y + b.h / 2 - (lines.length - 1) * lh / 2 + 4 - (b.type === 'document' ? 4 : 0);
-      var text = svgEl('text', { x: b.x + b.w / 2, y: ty, 'text-anchor': 'middle', class: 'fc-t', fill: ink ? INK.text : null,
-        'font-size': ink ? '13' : null, 'font-weight': ink ? '600' : null, 'font-family': ink ? 'Segoe UI, Arial, sans-serif' : null }, g);
-      lines.forEach(function (ln, i) { var ts = svgEl('tspan', { x: b.x + b.w / 2, dy: i ? lh : 0 }, text); ts.textContent = ln; });
+      var lines = b.lines, lh = 16;
+      if (b.card) {
+        // a card: the name on top (left), a rule, the notes in one or two columns
+        var pad = b.type === 'data' || b.type === 'manual' ? 24 : 16, tx = b.x + pad, ty0 = b.y + 22;
+        var head = svgEl('text', { x: tx, y: ty0, class: 'fc-t fc-card-t', fill: ink ? INK.text : null, 'font-size': ink ? '13' : null, 'font-weight': ink ? '700' : null, 'font-family': ink ? FONT : null }, g);
+        lines.forEach(function (ln, i) { var ts = svgEl('tspan', { x: tx, dy: i ? lh : 0 }, head); ts.textContent = ln; });
+        var cols = (b.notes || []).filter(function (c) { return c.length; });
+        if (cols.length) {
+          var ry = ty0 + (lines.length - 1) * lh + 10;
+          svgEl('path', { d: 'M' + tx + ' ' + ry + 'H' + (b.x + b.w - pad), class: 'fc-card-rule', stroke: ink ? INK.laneLine : null, 'stroke-width': ink ? '1' : null }, g);
+          var colW = (b.w - pad * 2) / cols.length;
+          cols.forEach(function (col, c) {
+            var nt = svgEl('text', { x: tx + c * colW, y: ry + 17, class: 'fc-card-n', fill: ink ? INK.text2 : null, 'font-size': ink ? '11.5' : null, 'font-family': ink ? FONT : null }, g);
+            col.forEach(function (ln, i) { var ts = svgEl('tspan', { x: tx + c * colW, dy: i ? 15 : 0 }, nt); ts.textContent = ln; });
+          });
+        }
+      } else {
+        var ty = b.y + b.h / 2 - (lines.length - 1) * lh / 2 + 4 - (b.type === 'document' ? 4 : 0);
+        var text = svgEl('text', { x: b.x + b.w / 2, y: ty, 'text-anchor': 'middle', class: 'fc-t', fill: ink ? INK.text : null,
+          'font-size': ink ? '13' : null, 'font-weight': ink ? '600' : null, 'font-family': ink ? FONT : null }, g);
+        lines.forEach(function (ln, i) { var ts = svgEl('tspan', { x: b.x + b.w / 2, dy: i ? lh : 0 }, text); ts.textContent = ln; });
+      }
       if (opts.live) {
         // small marks: notes, links, to verify, a problem
         var mx = b.x + b.w - 4, marks = [];
-        if (n.notes) marks.push(['fc-mnote', '≡', 'Has notes']);
+        if (n.notes && !b.card) marks.push(['fc-mnote', '≡', 'Has notes']);
         if (n.special && n.special.length) marks.push(['fc-msp', '!', n.special.join('\n')]);
         marks.forEach(function (m, i) {
           var c = svgEl('g', { class: 'fc-mark ' + m[0] }, g);
@@ -127,7 +162,7 @@
           var t2 = svgEl('text', { x: mx - i * 17, y: b.y + 6, 'text-anchor': 'middle' }, c); t2.textContent = m[1];
           var t3 = svgEl('title', {}, c); t3.textContent = m[2];
         });
-        if (id === st.sel && MP.editing() && !MP.coarse() && !walk && b.type !== 'end') {
+        if (id === st.sel && MP.editing() && !MP.coarse() && !walk && b.type !== 'end' && b.type !== 'note') {
           var h = svgEl('g', { class: 'fc-handle', 'data-handle': id }, g);
           svgEl('circle', { cx: b.x + b.w / 2, cy: b.y + b.h + 14, r: 9 }, h);
           svgEl('path', { d: 'M' + (b.x + b.w / 2 - 4) + ' ' + (b.y + b.h + 14) + 'h8M' + (b.x + b.w / 2) + ' ' + (b.y + b.h + 10) + 'v8' }, h);
@@ -135,6 +170,17 @@
         }
       }
     });
+    // the legend, when there are replies
+    if (L.legend) {
+      var lgd = svgEl('g', { class: 'fc-legend' }, svg), lx = L.legend.x, ly = L.legend.y;
+      [['Escalate / next', false], ['Answer / reply', true]].forEach(function (it, i) {
+        var x0 = lx + i * 190;
+        svgEl('path', { d: 'M' + x0 + ' ' + ly + 'H' + (x0 + 40), class: 'fc-lg-line' + (it[1] ? ' reply' : ''), 'marker-end': 'url(#' + pre + '-arrow)', fill: 'none',
+          stroke: ink ? INK.line : null, 'stroke-width': ink ? '1.6' : null, 'stroke-dasharray': ink && it[1] ? '6 4' : null }, lgd);
+        var t = svgEl('text', { x: x0 + 50, y: ly + 4, class: 'fc-legend-t', fill: ink ? INK.text2 : null, 'font-size': ink ? '12' : null, 'font-family': ink ? FONT : null }, lgd);
+        t.textContent = it[0];
+      });
+    }
     return svg;
   }
 
@@ -248,8 +294,8 @@
       n.notes ? el('p', { class: 'fc-walk-n', text: n.notes.length > 400 ? n.notes.slice(0, 400) + '…' : n.notes }) : null);
     var row = el('div', { class: 'row' });
     if (n.type === 'end' || !ex.length) row.appendChild(el('span', { class: 'badge ' + (n.type === 'end' ? 'success' : 'warning'), text: n.type === 'end' ? 'The end of this way.' : 'No arrow out of this step: a dead end.' }));
-    ex.forEach(function (l) { row.appendChild(el('button', { type: 'button', class: 'btn small ' + (ex.length > 1 ? '' : 'primary'), on: { click: function () { walkTo(l); } } },
-      ex.length > 1 || l.label ? (l.label || 'Next') + ' → ' : 'Next → ', el('span', { class: 'fc-walk-to', text: N(l.to).title }))); });
+    ex.forEach(function (l) { row.appendChild(el('button', { type: 'button', class: 'btn small ' + (l.rel === 'reply' ? 'ghost' : ex.length > 1 ? '' : 'primary'), on: { click: function () { walkTo(l); } } },
+      l.rel === 'reply' ? (l.label || 'Reply') + ' ↩ ' : ex.length > 1 || l.label ? (l.label || 'Next') + ' → ' : 'Next → ', el('span', { class: 'fc-walk-to', text: N(l.to).title }))); });
     row.appendChild(el('span', { class: 'grow' }));
     if (w.path.length > 1) row.appendChild(el('button', { type: 'button', class: 'btn ghost small', text: '‹ Back', on: { click: walkBack } }));
     row.appendChild(el('button', { type: 'button', class: 'btn ghost small', text: 'Read the step', on: { click: function () { MP.editor.open(w.at); } } }));
@@ -294,8 +340,8 @@
           jobs.push(MP.rpc('maps_branch_save', { p_branch: c.id, p_version: c.version, p_patch: patch }).then(function (r) { c.version = r.version; c.props = r.props; c.place = r.place; c.status = r.status; }));
         }
         return Promise.all(jobs).then(function () {
-          if (!from) return null;
-          return MP.rpc('maps_line_add', { p_from: from.id, p_kind: 'flow', p_rel: null, p_to: c.id, p_target: null, p_label: label || '' });
+          if (!from || from.type === 'note') return null;
+          return MP.rpc('maps_line_add', { p_from: from.id, p_kind: 'flow', p_rel: 'next', p_to: c.id, p_target: null, p_label: label || '' });
         }).then(function () { return MP.reload(function () { st.sel = c.id; MP.view.wantScroll = true; }); })
           .then(function () { MP.editor.open(c.id, 'name'); }, MP.toastErr);
       });
@@ -316,13 +362,20 @@
         return v;
       } }] }).then(function (v) { return v === undefined ? null : v; });
   }
-  function addArrow(from, to) {
+  function addArrow(from, to, kind) {
     if (from.id === to.id) return Promise.resolve();
+    if (from.type === 'note' || to.type === 'note') { Core.toast('A Note stands beside the chart: no arrows to or from it.', 'danger'); return Promise.resolve(); }
+    // drawn back to a step that has an arrow to this one: a reply (dashed), unless chosen otherwise
+    var reply = kind ? kind === 'reply' : exitsOf(to.id).some(function (l) { return l.to === from.id && l.rel !== 'reply'; });
+    if (reply) {
+      return MP.act(function () { return MP.rpc('maps_line_add', { p_from: from.id, p_kind: 'flow', p_rel: 'reply', p_to: to.id, p_target: null, p_label: '' }); },
+        function () { if (!kind) Core.toast('Drawn as a reply (dashed) to the arrow from ' + to.title + '. Change it in the step panel.'); return MP.reload(); });
+    }
     if (exitsOf(from.id).some(function (l) { return l.to === to.id; })) { Core.toast('There is an arrow from ' + from.title + ' to ' + to.title + ' already.', 'danger'); return Promise.resolve(); }
     var ask = from.type === 'decision' ? answer(from, null) : Promise.resolve('');
     return ask.then(function (label) {
       if (label === null) return;
-      return MP.act(function () { return MP.rpc('maps_line_add', { p_from: from.id, p_kind: 'flow', p_rel: null, p_to: to.id, p_target: null, p_label: label }); },
+      return MP.act(function () { return MP.rpc('maps_line_add', { p_from: from.id, p_kind: 'flow', p_rel: 'next', p_to: to.id, p_target: null, p_label: label }); },
         function () { return MP.reload(); });
     });
   }
@@ -517,7 +570,7 @@
           n.status !== 'verified' ? el('span', { class: 'mp-tv', text: n.status === 'changed' ? 'changed' : 'to verify' }) : null),
         n.props && n.props.lane ? el('div', { class: 'faint', text: n.props.lane }) : null,
         ex.length ? el('ul', { class: 'fc-exits' }, ex.map(function (l) {
-          return el('li', {}, el('span', { class: 'fc-arr', text: '→ ' + (l.label ? l.label + ': ' : '') }),
+          return el('li', {}, el('span', { class: 'fc-arr', text: (l.rel === 'reply' ? '↩ ' : '→ ') + (l.label ? l.label + ': ' : '') }),
             el('button', { type: 'button', class: 'fc-go', text: N(l.to).title, on: { click: function (ev) { ev.stopPropagation(); MP.nav.pick(N(l.to)); } } }));
         })) : n.type !== 'end' ? el('div', { class: 'faint', text: 'No arrow out yet.' }) : null));
     });
@@ -552,14 +605,14 @@
   }
   window.addEventListener('afterprint', function () { document.documentElement.classList.remove('mp-printing'); var h = $('mp-print'); if (h) Core.clear(h); });
   function excel() {
-    var root = N(MP.M.root), rows = [['No.', 'Step', 'Shape', 'Lane', 'Next (answer: step)', 'Notes', 'Status']], num = {};
+    var root = N(MP.M.root), rows = [['No.', 'Step', 'Shape', 'Lane', 'Group', 'Next (answer: step)', 'Notes', 'Status']], num = {};
     root.kids.forEach(function (id, i) { num[id] = i + 1; });
     root.kids.forEach(function (id, i) {
       var n = N(id);
-      rows.push([i + 1, n.title, MP.SHAPE_NAME[n.type] || 'Process', (n.props && n.props.lane) || '',
-        exitsOf(id).map(function (l) { return (l.label ? l.label + ': ' : '') + num[l.to] + '. ' + N(l.to).title; }).join('\n'), n.notes || '', MP.statusWord(n)]);
+      rows.push([i + 1, n.title, MP.SHAPE_NAME[n.type] || 'Process', (n.props && n.props.lane) || '', (n.props && n.props.group) || '',
+        exitsOf(id).map(function (l) { return (l.rel === 'reply' ? '(reply) ' : '') + (l.label ? l.label + ': ' : '') + num[l.to] + '. ' + N(l.to).title; }).join('\n'), n.notes || '', MP.statusWord(n)]);
     });
-    Core.download(MP.fileName(MP.M.map.name) + ' - steps.xlsx', window.HubXlsx.build(rows, 'Steps', [6, 36, 14, 16, 40, 50, 14]));
+    Core.download(MP.fileName(MP.M.map.name) + ' - steps.xlsx', window.HubXlsx.build(rows, 'Steps', [6, 36, 14, 16, 16, 40, 50, 14]));
   }
   function mermaid() { return MP.fc.mermaid.write(model()); }
 

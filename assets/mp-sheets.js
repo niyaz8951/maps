@@ -195,7 +195,7 @@
   function exportSheet() { if (MP.isFlow()) flowExport(); else outlineExport(); }
   function flowOutline() {
     return MP.io.write(function (id) { return N(id); }, MP.M.root, { name: function (t) { return MP.SHAPE_NAME[t] || 'Process'; },
-      exits: function (id) { return MP.exitsOf(id).map(function (l) { return { label: l.label, to_title: N(l.to).title }; }); } });
+      exits: function (id) { return MP.exitsOf(id).map(function (l) { return { label: l.label, to_title: N(l.to).title, reply: l.rel === 'reply' }; }); } });
   }
   function flowExport() {
     MP.flush();
@@ -271,9 +271,11 @@
     var m = MP.M.map, err = errBox();
     var name = el('input', { id: 'mp-set-name', value: m.name, maxlength: '80', autocomplete: 'off' });
     var share = MP.shareSelect('mp-set-share', m.share, m.mine || m.share === 'private');
+    var style = m.kind === 'flowchart' ? MP.select('mp-set-style', [['flowchart', 'Flowchart: from a Start to an End, fully checked'], ['process', 'Process flow: e.g. an escalation ladder; Start and End optional']], MP.flowStyle()) : null;
     var body = el('div', { class: 'stack' },
       MP.field('Map name', name),
       MP.field('Shared with', share, MP.SHARE_HINT + (m.mine ? '' : ' Only its owner can make it private again.')),
+      style && MP.canEdit() ? MP.field('Kind of chart', style) : null,
       el('p', { class: 'faint', text: MP.KIND[m.kind] + ' map, by ' + (m.mine ? 'you' : m.owner) + '.' }), err);
     Core.sheet({ title: 'Map settings', body: body, actions: [
       { label: 'Delete map', kind: 'danger', onClick: function () {
@@ -290,6 +292,11 @@
       { label: 'Save', kind: 'primary', onClick: function () {
         var v = name.value.replace(/\s+/g, ' ').trim(); err.hidden = true;
         if (!v) return fail(err, 'Give the map a name, usually the product.');
+        if (style && MP.canEdit() && style.value !== MP.flowStyle()) {
+          var root = N(MP.M.root), p = {}; for (var k in root.props) p[k] = root.props[k];
+          if (style.value === 'process') p.style = 'process'; else delete p.style;
+          MP.setList(root, 'props', p); MP.page.head();
+        }
         if (v === m.name && share.value === m.share) return true;
         return MP.settled().then(function () {
           return MP.rpc('maps_map_save', { p_map: m.id, p_version: m.version, p_name: v === m.name ? null : v, p_share: share.value === m.share ? null : share.value });
