@@ -1,0 +1,18 @@
+{
+  "name": "Process",
+  "about": "Starter for a knowledge map of one way of working. Generic headings only: rename, delete and fill them. Everything it adds comes in \"to verify\".",
+  "items": [
+    { "depth": 0, "title": "Purpose", "notes": "Why the process exists and what a good result looks like." },
+    { "depth": 0, "title": "When it starts", "notes": "What starts it, and what must be ready before the first step." },
+    { "depth": 0, "title": "Inputs", "notes": "The information, documents and approvals needed, and where each one comes from." },
+    { "depth": 0, "title": "Steps", "notes": "One branch per step, in order. Under a step: who does it, how long it usually takes, and what it hands on.", "props": { "layout": "columns" } },
+    { "depth": 1, "title": "Step 1" },
+    { "depth": 1, "title": "Step 2" },
+    { "depth": 1, "title": "Step 3" },
+    { "depth": 0, "title": "Roles", "notes": "Who takes part and what each role decides or does." },
+    { "depth": 0, "title": "Outputs", "notes": "What the process produces, who receives it, and in what form." },
+    { "depth": 0, "title": "Checks", "notes": "What is checked, by whom and when, before the result is used." },
+    { "depth": 0, "title": "Exceptions and escalation", "notes": "What happens when something does not fit the normal way, and who decides." },
+    { "depth": 0, "title": "Common issues", "notes": "Problems seen before, with what caused them and what fixed them." }
+  ]
+}

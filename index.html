@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en" data-loading>
+<head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://cykpvtekrdfmqimtrcps.supabase.co; connect-src 'self' https://cykpvtekrdfmqimtrcps.supabase.co; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F3F7FA">
+<title>Maps - DAME HUB</title>
+<link rel="stylesheet" href="/dame-hub/core/v1/theme.css">
+<link rel="stylesheet" href="/maps/assets/mp.css">
+<link rel="icon" href="/dame-hub/core/v1/icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/dame-hub/core/v1/icons/apple-touch-icon.png">
+<script src="/dame-hub/core/v1/config.js" defer></script>
+<script src="/dame-hub/core/v1/api.js" defer></script>
+<script src="/dame-hub/core/v1/core.js" defer></script>
+<script src="/maps/assets/mp-data.js" defer></script>
+<script src="/maps/assets/mp-io.js" defer></script>
+<script src="/maps/assets/mp-list.js" defer></script>
+<script src="/maps/assets/mp-map.js" defer></script>
+<script src="/maps/assets/mp-outline.js" defer></script>
+<script src="/maps/assets/mp-editor.js" defer></script>
+<script src="/maps/assets/mp-sheets.js" defer></script>
+<script src="/maps/assets/mp-page.js" defer></script>
+</head>
+<body>
+<header id="topbar"></header>
+<main id="mp-main">
+
+  <!-- every map -->
+  <section id="mp-list" hidden>
+    <div class="page-head">
+      <div>
+        <h1>Maps</h1>
+        <p class="muted">Knowledge as a growing tree. Open a map, click a branch to open it, double-click to read it.</p>
+      </div>
+      <div class="row">
+        <button class="btn ghost" type="button" id="mp-trash" hidden>Trash</button>
+        <button class="btn primary" type="button" id="mp-new" hidden>Add map</button>
+      </div>
+    </div>
+    <div class="mp-find">
+      <input type="search" id="mp-find" placeholder="Search every map: e.g. IPLV, coil coating" autocomplete="off" aria-label="Search every map">
+    </div>
+    <div class="mp-hits" id="mp-hits" hidden aria-live="polite"></div>
+    <div class="tiles mp-grid" id="mp-grid" aria-busy="true"></div>
+    <div id="mp-empty" hidden></div>
+  </section>
+
+  <!-- one map -->
+  <section id="mp-map" hidden>
+    <div class="mp-head">
+      <div class="grow">
+        <p class="mp-back"><a href="/maps/">All maps</a></p>
+        <h1 id="mp-title">Map</h1>
+        <p class="muted mp-sub" id="mp-sub"></p>
+      </div>
+    </div>
+    <div class="card mp-bar" id="mp-bar">
+      <input type="search" id="mp-q" placeholder="Search this map" autocomplete="off" aria-label="Search this map">
+      <div class="tabs" role="tablist" aria-label="View">
+        <button type="button" role="tab" id="mp-view-map" aria-selected="true">Map</button>
+        <button type="button" role="tab" id="mp-view-out" aria-selected="false">Outline</button>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Read or edit" id="mp-mode" hidden>
+        <button type="button" role="tab" id="mp-read" aria-selected="true">Read</button>
+        <button type="button" role="tab" id="mp-edit" aria-selected="false">Edit</button>
+      </div>
+      <div class="mp-actions">
+        <button class="btn ghost small" type="button" id="mp-import" hidden>Import</button>
+        <button class="btn ghost small" type="button" id="mp-export">Export</button>
+        <button class="btn ghost small" type="button" id="mp-history">History</button>
+        <button class="btn ghost small" type="button" id="mp-btrash" hidden>Trash</button>
+        <button class="btn ghost small" type="button" id="mp-settings" hidden>Map settings</button>
+      </div>
+    </div>
+    <div class="mp-meta" id="mp-meta">
+      <nav class="mp-crumbs" id="mp-crumbs" aria-label="Branch path"></nav>
+      <div class="mp-pills" id="mp-pills"></div>
+    </div>
+    <div id="mp-state" hidden></div>
+    <div class="mp-work" id="mp-work">
+      <div class="mp-above">
+        <p class="mp-hint" id="mp-hint"></p>
+        <div class="mp-legend" id="mp-legend" hidden aria-label="What the lines mean"></div>
+      </div>
+      <div class="mp-board" id="mp-board">
+        <div class="mp-canvas" id="mp-canvas"><div class="mp-sizer" id="mp-sizer"><div class="mp-stage" id="mp-stage" role="tree" aria-label="Map"></div></div></div>
+        <div class="mp-outline" id="mp-outline" hidden></div>
+        <div class="mp-tools" id="mp-tools" role="toolbar" aria-label="Map view">
+          <button class="mp-tb" type="button" id="mp-zoom-out" title="Zoom out (-)" aria-label="Zoom out">&#8722;</button>
+          <button class="mp-tb mp-pct" type="button" id="mp-zoom-pct" title="Back to 100% (0)">100%</button>
+          <button class="mp-tb" type="button" id="mp-zoom-in" title="Zoom in (+)" aria-label="Zoom in">+</button>
+          <button class="mp-tb" type="button" id="mp-fit" title="Fit the map on the screen">Fit</button>
+          <button class="mp-tb" type="button" id="mp-xlinks" aria-pressed="true" hidden title="Lines between linked branches: the chosen branch's, all, or none (press to change)"><span id="mp-xlinks-txt">Links: chosen</span></button>
+          <button class="mp-tb" type="button" id="mp-special" aria-pressed="false" title="Show the special notes under every branch">Special notes</button>
+          <button class="mp-tb mp-fullbtn" type="button" id="mp-full" aria-pressed="false" title="Full screen (F)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg><span id="mp-full-txt">Full screen</span></button>
+        </div>
+      </div>
+    </div>
+    <div class="mp-note-back" id="mp-note-back" hidden><article class="mp-note" id="mp-note" tabindex="-1" role="dialog" aria-modal="true" aria-label="Branch"></article></div>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "Product breakdown",
+  "about": "Starter for a knowledge map of one product. Generic headings only: rename, delete and fill them. Everything it adds comes in \"to verify\".",
+  "items": [
+    { "depth": 0, "title": "Overview", "notes": "What the product is, what it is used for, and where it fits in a system. Two or three sentences a newcomer can read first." },
+    { "depth": 1, "title": "Range", "notes": "Sizes or capacities offered, from the smallest to the largest, and how the range is split into models or series." },
+    { "depth": 1, "title": "Model name", "notes": "How to read the model name or code: what each part of it means." },
+    { "depth": 0, "title": "Components", "notes": "The main parts, one branch each. Under a part: what it does, the choices offered, and what to check.", "props": { "layout": "columns" } },
+    { "depth": 1, "title": "Main part 1" },
+    { "depth": 1, "title": "Main part 2" },
+    { "depth": 1, "title": "Controls" },
+    { "depth": 0, "title": "Options and accessories", "notes": "What can be added or changed, and what each option needs or excludes. Link options that go together or exclude each other." },
+    { "depth": 0, "title": "Performance and ratings", "notes": "The figures that describe the product, each with its unit, the conditions it is rated at and the standard it comes from." },
+    { "depth": 0, "title": "Standards and certifications", "notes": "The standards the product is designed, tested or certified to, one branch each, with what each one covers." },
+    { "depth": 0, "title": "Selection", "notes": "How the product is chosen for a job: the inputs needed, the steps, and the usual mistakes." },
+    { "depth": 0, "title": "Installation and commissioning", "notes": "What the site must provide, the order of work, and the checks before handover." },
+    { "depth": 0, "title": "Service and maintenance", "notes": "Routine tasks and their intervals, spare parts, and common faults with their causes." },
+    { "depth": 0, "title": "Common questions", "notes": "Questions customers and colleagues ask often, one branch each, with the answer in its notes." }
+  ]
+}
