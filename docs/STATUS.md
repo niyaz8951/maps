@@ -3,6 +3,8 @@
 Chats that start with **DAME-MAPS** continue from here.
 
 ## Now
+- 2026-11-05 - **Step 1 checked by the owner.** `001` and `002` applied on live. Next: step 2 (or flowcharts first, if the
+  owner chooses).
 - 2026-11-05 - **Step 1 delivered: foundation and knowledge maps.** Waiting for the owner's check (below). The tile stays
   off for everyone else until it passes.
   - Schema `maps`: maps, branches with type / typed properties / place, lines, history, trash (30 days), versions,
@@ -22,8 +24,8 @@ Chats that start with **DAME-MAPS** continue from here.
 ## SQL applied
 | File | Live | Staging |
 |---|---|---|
-| `db/maps/001_init.sql` | not yet | - (no staging project) |
-| `db/maps/002_flowchart_ready.sql` | not yet | - |
+| `db/maps/001_init.sql` | 2026-11-05 | - (no staging project) |
+| `db/maps/002_flowchart_ready.sql` | 2026-11-05 | - |
 
 ## Owner, to apply and check step 1
 1. Admin > Tiles > Maps: rights exactly `edit, verify` (as registered). Leave it **off** for now.
