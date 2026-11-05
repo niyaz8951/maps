@@ -5,7 +5,8 @@ Colour **rose**, icon **`map`**, order after Projects.
 
 ## What it does
 The team's Maps tool from Thinkneering, improved while it moves. A map is a tree of branches with notes, special notes and
-links. Three kinds: **knowledge** (product or process understanding), **piping** (step 3) and **wiring** (step 4).
+links. Four kinds: **knowledge** (product or process understanding), **flowchart** (step 3), **piping** (step 4) and
+**wiring** (step 5).
 No AI, no pictures. Started empty: nothing is migrated; a person carries a map across by hand with the old tool's Export
 and this tile's Import.
 
@@ -34,10 +35,12 @@ All in schema `maps`, RLS on, no policies; the browser reaches it only through t
 - `maps.branches` - parent, order, title, notes (up to 8000), special notes (up to 20 x 200, for people), **type** +
   **props** (typed values, SI, checked against `maps.types`), **place** `{x, y, w, h}` (2D view, step 3), verification
   (who, when, and the fact verified), version, trash columns.
-- `maps.lines` - links between branches (`link`, with a meaning), web links (`web`, https only); `pipe`, `wire`, `control`
-  and `tile` are allowed by the table for later steps. Deleting a branch hides its lines; purging it deletes them.
+- `maps.lines` - links between branches (`link`, with a meaning), web links (`web`, https only); `flow` (flowchart arrow,
+  label = the answer), `pipe`, `wire`, `control` and `tile` are allowed by the table for later steps. Deleting a branch hides its lines; purging it deletes them.
 - `maps.history` - every change: who, when, before, after. Typing in one branch for up to 10 minutes is one entry.
-- `maps.types` - branch types and the properties each takes. Step 1: `general` with `layout` (tree | columns).
+- `maps.types` - branch types and the properties each takes. Step 1: `general` with `layout` (tree | columns). 002:
+  flowchart shapes `start`, `end`, `process`, `decision`, `data` (Input / Output), `document`, `manual`, `delay` (Wait),
+  `subprocess`, `connector`, each with `lane` (text, up to 40).
 No foreign key to `core.profiles` or `auth.users`: rows keep the user id and the name at the time; pages show the current
 name through `core.display_names`.
 
@@ -98,6 +101,9 @@ Positions are set from code (`node.style.left`), never `style=""` in markup. Col
   night). Not part of the delivery to Supabase; `seed-local.sql` is never run on a Supabase project.
 
 ## Decisions
+- 2026-11-05 (owner) - **Flowcharts are a fourth kind.** The schema accepts them now (002, no screens); step 3 builds them
+  (shapes, lanes, labelled arrows, auto layout, drag to place, checks, walk through, Import / Export incl. Mermaid);
+  piping becomes step 4 and wiring step 5. Drag to place and line drawing are built here first and reused by piping's 2D view.
 - 2026-11-05 (owner) - three kinds; no pictures; start empty; improve while moving; rights `edit`, `verify` (project instructions).
 - 2026-11-05 - A map's kind is chosen when it is made and does not change (its branches' types depend on it).
 - 2026-11-05 - The centre branch is the map's name: renaming it renames the map (who manages the map).

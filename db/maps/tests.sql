@@ -1,4 +1,4 @@
--- Maps tile tests. Run on STAGING after db/maps/001_init.sql (while there is no staging project, the owner decides).
+-- Maps tile tests. Run on STAGING after db/maps/*.sql in order (while there is no staging project, the owner decides).
 -- Self-contained: makes its own throw-away accounts (mt_*), switches the tile on inside the test, and rolls everything
 -- back at the end, so nothing stays behind. Ends with "ALL MAPS TESTS PASSED".
 begin;
@@ -144,6 +144,8 @@ begin
   perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''web'', null, null, ''http://example.com/x'', null)', v_x), 'INVALID:target');
   perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''web'', null, null, ''javascript:alert(1)'', null)', v_x), 'INVALID:target');
   perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''pipe'', ''p-supply'', %L, null, null)', v_x, v_y), 'INVALID:kind');
+  perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', ''next'', %L, null, ''Yes'')', v_x, v_y), 'INVALID:kind');   -- 002: step 3
+  perform pg_temp.expect_error('select public.maps_create(''Approval'', ''flowchart'', ''private'', null)', 'INVALID:kind');          -- 002: step 3
   v := public.maps_line_save(v_line, 1, 'part', 'Part of');
   perform pg_temp.expect_error(format('select public.maps_line_save(%L, 1, ''see'', null)', v_line), 'INVALID:version');
   perform pg_temp.check((select count(*) from jsonb_array_elements(public.maps_get(v_a) -> 'lines')) = 2, 'two lines on the map');
@@ -315,6 +317,29 @@ begin
   reset role;
   perform pg_temp.check(not exists (select 1 from maps.maps where id = v_new), 'old trashed map purged');
   perform pg_temp.check(not exists (select 1 from maps.branches where id = pg_temp.got('b_fan')::uuid), 'old trashed branch purged');
+
+  -- ---------------------------------------------------------------- 002: the schema holds a flowchart (screens in step 3)
+  perform pg_temp.check((select t ->> 'name' from jsonb_array_elements(public.maps_types()) t where t ->> 'id' = 'decision') = 'Decision', 'shapes listed');
+  perform pg_temp.check(maps.clean_props('decision', 'flowchart', '{"lane": " Sales "}') = '{"lane": "Sales"}', 'lane kept, trimmed');
+  perform pg_temp.check(maps.clean_props('general', 'flowchart', null) = '{}', 'general lives in a flowchart');
+  perform pg_temp.expect_error('select maps.clean_props(''decision'', ''knowledge'', null)', 'INVALID:type');
+  perform pg_temp.expect_error(format('select maps.clean_props(''process'', ''flowchart'', %L)', jsonb_build_object('lane', repeat('x', 41))), 'INVALID:props');
+  perform pg_temp.expect_error('select maps.clean_props(''process'', ''flowchart'', ''{"flow": 12}'')', 'INVALID:props');
+  declare v_fc uuid; v_r uuid; v_s uuid; v_d uuid; v_e uuid; v_u uuid := (select id from t_ids where k = 'mt_edit');
+  begin
+    insert into maps.maps (name, kind, owner_id, owner_name) values ('Approval', 'flowchart', v_u, 'Mt Edit') returning id into v_fc;
+    insert into maps.branches (map_id, title) values (v_fc, 'Approval') returning id into v_r;
+    insert into maps.branches (map_id, parent_id, title, type, props, place) values (v_fc, v_r, 'Start', 'start', '{"lane": "Sales"}', '{"x": 0, "y": 0}') returning id into v_s;
+    insert into maps.branches (map_id, parent_id, title, type, props) values (v_fc, v_r, 'Standard product?', 'decision', '{"lane": "Sales"}') returning id into v_d;
+    insert into maps.branches (map_id, parent_id, title, type) values (v_fc, v_r, 'End', 'end') returning id into v_e;
+    insert into maps.lines (map_id, from_id, to_id, kind, rel, label) values
+      (v_fc, v_s, v_d, 'flow', 'next', ''), (v_fc, v_d, v_e, 'flow', 'next', 'Yes'), (v_fc, v_d, v_s, 'flow', 'next', 'No');
+    perform pg_temp.check((select count(*) from maps.lines where map_id = v_fc and kind = 'flow') = 3, 'flow lines held, loop included');
+    perform pg_temp.expect_error(format('insert into maps.lines (map_id, from_id, kind, rel) values (%L, %L, ''flow'', ''next'')', v_fc, v_d), 'new row for relation "lines" violates check constraint "lines_to_check"');
+    perform pg_temp.expect_error(format('insert into maps.lines (map_id, from_id, to_id, kind, rel) values (%L, %L, %L, ''arrow'', ''next'')', v_fc, v_d, v_e), 'new row for relation "lines" violates check constraint "lines_kind_check"');
+    perform pg_temp.expect_error(format('update maps.maps set kind = ''mindmap'' where id = %L', v_fc), 'new row for relation "maps" violates check constraint "maps_kind_check"');
+    delete from maps.maps where id = v_fc;
+  end;
 
   -- ---------------------------------------------------------------- the browser roles reach nothing directly
   perform set_config('role', 'authenticated', true);

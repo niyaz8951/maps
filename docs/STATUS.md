@@ -15,14 +15,20 @@ Chats that start with **DAME-MAPS** continue from here.
   - Checked locally: database tests, outline check, browser run on a laptop and a phone width, day and night
     (`dev/test/run.sh`): all pass, no console or CSP errors.
 
+- 2026-11-05 - **Flowcharts added as a fourth kind** (owner). `db/maps/002_flowchart_ready.sql`: the schema accepts them
+  now (kind `flowchart`, line kind `flow` with its label, ten shapes with a `lane`); no screens until step 3. Creating a
+  flowchart map and drawing `flow` lines stay refused (`INVALID:kind`) until then. Tests added; all pass locally.
+
 ## SQL applied
 | File | Live | Staging |
 |---|---|---|
 | `db/maps/001_init.sql` | not yet | - (no staging project) |
+| `db/maps/002_flowchart_ready.sql` | not yet | - |
 
 ## Owner, to apply and check step 1
 1. Admin > Tiles > Maps: rights exactly `edit, verify` (as registered). Leave it **off** for now.
-2. SQL editor: paste `db/maps/001_init.sql` whole and run. Then `select * from core.security_check();` - no rows. Security
+2. SQL editor: paste `db/maps/001_init.sql` whole and run, then `db/maps/002_flowchart_ready.sql` the same way (002 also
+   works if 001 already ran on its own). Then `select * from core.security_check();` - no rows. Security
    Advisor: no errors.
 3. `db/maps/tests.sql`: run it whole. It makes its own throw-away accounts, switches the tile on inside the test only and
    rolls everything back; it must end with `ALL MAPS TESTS PASSED`. (There is no staging project yet; your call whether
@@ -48,14 +54,22 @@ Chats that start with **DAME-MAPS** continue from here.
 ## Next
 1. Step 2 - knowledge extras: review list for verifiers, "linked from" across maps on the map, links to other tiles,
    more starter templates, print of a branch or a map (A4 outline).
-2. Step 3 - piping. 3. Step 4 - wiring (see the project instructions, "Scope").
+2. Step 3 - flowcharts: Start / End, Process, Decision, Input / Output, Document, Manual step, Wait, Sub-process,
+   Connector (ISO 5807); swimlanes; arrows with labels (Yes / No); auto layout top to bottom with right-angled arrows;
+   **drag to place** (saved in `place`), shared later by piping's 2D view; checks (one Start, an End, every step
+   reachable, no dead ends, every decision exit labelled); walk through and every path; links to piping / wiring
+   branches; Import of text outline and a Mermaid subset, Export SVG / print / Excel / Mermaid; starters (approval,
+   fault finding, start / stop sequence); phone: Outline with exits, chart read-only.
+3. Step 4 - piping. 4. Step 5 - wiring (see the project instructions, "Scope").
 
 ## Notes for the next steps
 - New branch types and their properties go into `maps.types` with a new SQL file; `maps.clean_props` checks them and the
   forms read them from `maps_types()`. The outline reader (`assets/mp-io.js`, `KEYS`) gets the old special-note keys
   (Flow, Leaving, Source, Pump head, Switch, Icon ...) for those types; until then they stay special notes.
-- `maps_create` accepts only `knowledge`; steps 3 and 4 replace it to allow `piping` and `wiring`.
-- `maps_line_add` accepts `link` and `web`; later files add `pipe`, `wire`, `control`, `tile` (the table already allows them).
+- `maps_create` accepts only `knowledge`; steps 3, 4 and 5 replace it to allow `flowchart`, `piping` and `wiring`.
+- `maps_line_add` accepts `link` and `web`; later files add `flow` (step 3: same map only, rel `next`, label = the
+  answer), `pipe`, `wire`, `control`, `tile` (the table already allows them).
+- Flowchart lane order: a typed property on the centre branch in step 3 (a new `maps.types` row or prop, no table change).
 - The engines, symbols and their checks (Thinkneering `mp-water.js`, `mp-power.js`, `mp-flow.js`, `mp-schematic.js`,
   `mp-signs.js`, `scripts/mp-*-check.mjs`) come over in steps 3 and 4, reading typed values instead of special notes.
 

@@ -1,6 +1,6 @@
 # Maps
 
-The **Maps** tile of DAME HUB: knowledge, piping and wiring maps. A map is a tree of branches with notes, special notes
+The **Maps** tile of DAME HUB: knowledge maps, flowcharts, piping and wiring maps. A map is a tree of branches with notes, special notes
 and links, read on a free-flow map or as an outline, verified branch by branch, with history and a trash.
 Served at `/maps/`; opens inside the DAME app after sign-in. Login, users, rights and theme come from the core at `/dame-hub/core/v1/`.
 
