@@ -7,7 +7,7 @@ window.MP = (function () {
   var MP = {
     TILE: 'maps',
     me: null,                 // Core.requireLogin result
-    flags: { editor: false, verifier: false, admin: false },
+    flags: { editor: false, verifier: false, admin: false },   // from the level in Maps (contribute, approve, manage)
     types: [],
     M: null,                  // the open map: { map, nodes: { id: node }, root, lines: [], facts: {} }
     st: { focus: null, sel: null, view: 'map', edit: false, q: '', note: null, zoom: 1, special: false, xlinks: 'chosen', full: false, peek: null }
@@ -19,8 +19,16 @@ window.MP = (function () {
   MP.phone = function () { return window.matchMedia ? window.matchMedia('(max-width: 640px)').matches : false; };
   MP.coarse = function () { return window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false; };
   MP.UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  // Who may open a map lives in the core (Access panel, Core.share). MP.SHARE only reads history written before 006.
   MP.SHARE = { private: 'Only me', team_read: 'Team can read', team_edit: 'Team can edit' };
-  MP.SHARE_HINT = 'Team = everyone who has Maps on the dashboard.';
+  MP.EVERYONE = [['none', 'Only me, and the people I add in Share'], ['read', 'Everyone in Maps can view'], ['edit', 'Everyone in Maps can edit']];
+  // Who can open a map, in a few words (lists, the map's head).
+  MP.who = function (m) {
+    if (m.everyone === 'edit') return 'Everyone can edit';
+    if (m.everyone === 'read') return 'Everyone can view' + (m.shared ? ' · shared with ' + m.shared : '');
+    if (m.shared) return 'Shared with ' + m.shared;
+    return m.mine ? 'Only you' : 'Private';
+  };
   MP.KIND = { knowledge: 'Knowledge', flowchart: 'Flowchart', piping: 'Piping', wiring: 'Wiring' };
 
   // View settings only (never data): kept per browser under dame.maps.* and cleared at sign-out by the core.
@@ -54,7 +62,8 @@ window.MP = (function () {
     'INVALID:target': 'A web link starts with https:// and has no spaces. A tile link is the tile\'s id, then the page: e.g. projects/index.html.',
     'INVALID:label': 'The text shown is at most 120 characters; the answer on an arrow at most 40.',
     'INVALID:kind': 'That is not available yet.',
-    'INVALID:share': 'Choose who the map is shared with.',
+    'INVALID:share': 'Choose who can open the map.',
+    'INVALID:everyone': 'Choose who can open the map.',
     'INVALID:q': 'Search for up to 100 characters.',
     'INVALID:patch': 'Nothing to save.',
     'INVALID:comment': 'Say why in 1 to 500 characters.',
@@ -129,6 +138,14 @@ window.MP = (function () {
   MP.canEdit = function () { return !!MP.M && (MP.M.map.right === 'edit' || MP.M.map.right === 'manage'); };
   MP.canManage = function () { return !!MP.M && MP.M.map.right === 'manage'; };
   MP.canVerify = function () { return !!MP.M && !!MP.M.map.can_verify; };
+  MP.canShare = function () { return !!MP.M && !!MP.M.map.can_share; };
+  // The core's Access panel for the open map (who can open it: everyone, people, groups; owner). Reloads when changed.
+  MP.share = function () {
+    if (!MP.M) return;
+    var id = MP.M.map.id;
+    MP.settled().then(function () { return Core.share({ kind: 'map', id: id }); })
+      .then(function (changed) { if (changed && MP.M && MP.M.map.id === id) MP.reload(); });
+  };
   MP.editing = function () { return MP.st.edit && MP.canEdit(); };
 
   // ---------- lines ----------
@@ -277,9 +294,7 @@ window.MP = (function () {
     if (value != null) s.value = value;
     return s;
   };
-  MP.shareSelect = function (id, value, allowPrivate) {
-    return MP.select(id, Object.keys(MP.SHARE).filter(function (k) { return allowPrivate !== false || k !== 'private'; }).map(function (k) { return [k, MP.SHARE[k]]; }), value);
-  };
+  MP.everyoneSelect = function (id, value) { return MP.select(id, MP.EVERYONE, value || 'none'); };
   // A verifier sends a branch back with a comment. Resolves true when it was sent.
   MP.sendBack = function (id, title) {
     var ta = el('textarea', { id: 'mp-sendback', maxlength: '500', rows: '4', placeholder: 'What to check, add or correct, e.g. "Which standard does this rating come from?"' });

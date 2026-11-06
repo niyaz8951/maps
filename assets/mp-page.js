@@ -8,10 +8,11 @@
   function head() {
     var m = MP.M.map;
     $('mp-title').textContent = m.name; Core.setTitle(m.name + ' - Maps');
-    $('mp-sub').textContent = [m.kind === 'flowchart' ? (MP.flowStyle() === 'process' ? 'Process flow' : 'Flowchart') : MP.KIND[m.kind] + ' map', m.mine ? 'yours' : 'by ' + m.owner, MP.SHARE[m.share], m.right === 'read' ? 'you can read it' : null,
+    $('mp-sub').textContent = [m.kind === 'flowchart' ? (MP.flowStyle() === 'process' ? 'Process flow' : 'Flowchart') : MP.KIND[m.kind] + ' map', m.mine ? 'yours' : 'by ' + m.owner, MP.who(m), m.right === 'read' ? 'you can read it' : null,
       'changed ' + Core.date(m.updated_at) + (m.updated_by ? ' by ' + m.updated_by : '')].filter(Boolean).join(' · ');
     $('mp-mode').hidden = !MP.canEdit();
     $('mp-import').hidden = !(MP.canEdit() && st.edit);
+    $('mp-share').hidden = !MP.canShare();
     $('mp-settings').hidden = !MP.canManage();
     $('mp-btrash').hidden = !MP.canManage();
   }
@@ -246,7 +247,7 @@
   function remove(n) {
     var c = MP.under(n.id);
     return Core.confirm((c ? 'The branch and the ' + MP.plural(c, 'branch', 'branches') + ' under it go' : 'The branch goes') +
-      ' to the trash for 30 days. The owner of the map, a tile admin or the super user can restore it from there.',
+      ' to the trash for 30 days. The owner of the map or a manager of Maps can restore it from there.',
       { title: 'Delete ' + n.title + '?', ok: 'Delete branch', danger: true }).then(function (yes) {
       if (!yes) return;
       return MP.act(function () { return MP.rpc('maps_branch_delete', { p_branch: n.id }); }, function () {
@@ -315,6 +316,7 @@
     $('mp-history').addEventListener('click', function () { MP.sheets.history(null); });
     $('mp-btrash').addEventListener('click', function () { MP.sheets.trash(MP.M.map.id); });
     $('mp-settings').addEventListener('click', MP.sheets.settings);
+    $('mp-share').addEventListener('click', MP.share);
     $('mp-special').addEventListener('click', function () { st.special = !st.special; MP.store('special', st.special ? '1' : '0'); renderView(); });
     $('mp-xlinks').addEventListener('click', function () {
       st.xlinks = st.xlinks === 'chosen' ? 'all' : st.xlinks === 'all' ? 'off' : 'chosen';
@@ -339,7 +341,8 @@
   // ---------- start: the guard first ----------
   Core.requireLogin({ tile: MP.TILE }).then(function (me) {
     MP.me = me;
-    MP.flags = { editor: me.is_super || me.rights.indexOf('edit') >= 0, verifier: me.is_super || me.rights.indexOf('verify') >= 0, admin: !!me.tile_admin || me.is_super };
+    // levels in Maps (core 011): contribute adds maps, approve verifies, manage sees every map. Showing and hiding only.
+    MP.flags = { level: me.level, editor: Core.atLeast('contribute'), verifier: Core.atLeast('approve'), admin: Core.atLeast('manage') };
     var id = Core.param('map');
     if (id) openMap(id); else MP.list.show();
   });

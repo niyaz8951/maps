@@ -8,6 +8,7 @@ export PGARGS DAME_HUB="${DAME_HUB:-../dame-hub}"
 dev/test/db.sh
 psql $PGARGS -q -v ON_ERROR_STOP=1 -f dev/test/seed-local.sql
 psql $PGARGS -qc "update core.tiles set accent = 'rose' where id = 'maps'"
+dev/test/migrate-check.sh 2>&1 | grep -E 'PASSED|UNEXPECTED|ERROR'
 node dev/outline-check.mjs | tail -1
 node dev/flowchart-check.mjs | tail -1
 node dev/test/mock.mjs > /dev/null 2>&1 & MOCK=$!

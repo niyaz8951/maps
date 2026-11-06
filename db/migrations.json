@@ -1,0 +1,12 @@
+{
+  "repo": "maps",
+  "note": "Every SQL file of this repo in run order. Admin > Health lists the ones not yet applied. Keep in step with db/: node ../dame-hub/dev/migrations-check.mjs .",
+  "files": [
+    { "name": "001_init", "path": "db/maps/001_init.sql" },
+    { "name": "002_flowchart_ready", "path": "db/maps/002_flowchart_ready.sql" },
+    { "name": "003_flowcharts", "path": "db/maps/003_flowcharts.sql" },
+    { "name": "004_review", "path": "db/maps/004_review.sql" },
+    { "name": "005_process_flow", "path": "db/maps/005_process_flow.sql" },
+    { "name": "006_access", "path": "db/maps/006_access.sql" }
+  ]
+}

@@ -63,7 +63,14 @@ const OLD = 'Filters\n  > What the filters do.\n  ! Layout: columns\n  Pre-filte
   await own.click('#mp-export'); const text = await own.inputValue('#mp-export-text'); await own.click('.sheet .btn:text("Close")');
   check(/! Layout: columns/.test(text) && /! Place: 120, 80/.test(text), 'export writes the typed values back');
   await own.click('#mp-history'); await own.waitForSelector('.mp-hrow'); check((await own.$$('.mp-hrow')).length >= 8, 'history lists the changes'); await own.click('.sheet .btn.primary');
-  await own.click('#mp-settings'); await own.selectOption('#mp-set-share', 'team_edit'); await own.click('.sheet .btn.primary'); await own.waitForTimeout(800);
+  // Share (the core's Access panel): everyone in Maps can edit
+  check(/Only you/.test(await own.textContent('#mp-sub')), 'a new map: only its owner');
+  await own.click('#mp-share'); await own.waitForSelector('#sh-everyone'); await shot(own, '02-access');
+  await own.selectOption('#sh-everyone', 'edit'); await own.click('.sheet .btn.primary'); await own.waitForTimeout(1000);
+  check(/Everyone can edit/.test(await own.textContent('#mp-sub')), 'shared: everyone in Maps can edit');
+  await own.click('#mp-settings'); check(!(await own.$('#mp-set-name + * select')), 'settings: the name only, Share from there');
+  await own.click('#mp-set-share'); await own.waitForSelector('#sh-everyone'); check(await own.inputValue('#sh-everyone') === 'edit', 'settings opens Share');
+  await own.click('.sheet .btn:text("Cancel")'); await own.waitForTimeout(300);
   // the clash: two editors on the same branch
   const ed = await open(browser, 'mt_edit');
   for (const p of [own, ed]) {
@@ -85,13 +92,25 @@ const OLD = 'Filters\n  > What the filters do.\n  ! Layout: columns\n  Pre-filte
   await rd.goto(BASE + '/maps/'); await rd.waitForSelector('.mp-tile');
   check(await rd.isHidden('#mp-new'), 'reader cannot add maps');
   await rd.fill('#mp-find', 'latent'); await rd.waitForSelector('.mp-hit'); check(/Coil selection/.test(await rd.textContent('.mp-hit')), 'search across maps');
-  await rd.click('.mp-tile'); await rd.waitForSelector('.mp-n'); check(await rd.isHidden('#mp-mode') && await rd.isHidden('#mp-settings'), 'reader: no Edit, no settings');
+  await rd.click('.mp-tile'); await rd.waitForSelector('.mp-n'); check(await rd.isHidden('#mp-mode') && await rd.isHidden('#mp-settings') && await rd.isHidden('#mp-share'), 'reader: no Edit, no settings, no Share');
+  // a private map of the editor: the manager of Maps opens it, the reader does not see it
+  await ed.goto(BASE + '/maps/'); await ed.waitForSelector('.mp-tile'); await ed.click('#mp-new'); await ed.fill('#mp-new-name', 'Private notes');
+  check(await ed.inputValue('#mp-new-share') === 'none', 'a new map starts as only its owner');
+  await ed.click('.sheet .btn.primary'); await ed.waitForSelector('.mp-n');
+  const adm = await open(browser, 'mt_admin');
+  await adm.goto(BASE + '/maps/'); await adm.waitForSelector('.mp-tile');
+  check(await adm.isVisible('.mp-tile:has-text("Private notes")'), 'a manager sees a private map');
+  await adm.click('.mp-tile:has-text("Private notes")'); await adm.waitForSelector('.mp-n');
+  check(await adm.isVisible('#mp-share') && await adm.isVisible('#mp-settings'), 'a manager may share it and change its settings');
+  await adm.click('#mp-share'); await adm.waitForSelector('#sh-owner', { state: 'attached' }); await shot(adm, '06-access-manager'); await adm.click('.sheet .btn:text("Cancel")');
+  await rd.goto(BASE + '/maps/'); await rd.waitForSelector('.mp-tile');
+  check(!(await rd.isVisible('.mp-tile:has-text("Private notes")')), 'the reader does not see it');
   // phone (outline first, no sideways scroll) and night
   const ph = await open(browser, 'mt_owner', { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: 'dark' });
   await ph.goto(BASE + '/maps/'); await ph.tap('.mp-tile'); await ph.waitForSelector('.mp-orow'); await ph.waitForTimeout(300);
   check(await ph.isVisible('#mp-outline'), 'phone opens on the Outline');
   check(!(await ph.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)), 'phone: no sideways scroll'); await shot(ph, '05-phone-night');
-  for (const p of [own, ed, ver, rd, ph]) check(!p.errors.length, 'no console or CSP errors' + (p.errors.length ? ': ' + p.errors.join(' | ') : ''));
+  for (const p of [own, ed, ver, rd, ph, adm]) check(!p.errors.length, 'no console or CSP errors' + (p.errors.length ? ': ' + p.errors.join(' | ') : ''));
   await browser.close();
   console.log(failed ? '\n' + failed + ' FAILED' : '\nALL BROWSER CHECKS PASSED');
   process.exit(failed ? 1 : 0);

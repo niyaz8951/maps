@@ -270,17 +270,21 @@
   function settings() {
     var m = MP.M.map, err = errBox();
     var name = el('input', { id: 'mp-set-name', value: m.name, maxlength: '80', autocomplete: 'off' });
-    var share = MP.shareSelect('mp-set-share', m.share, m.mine || m.share === 'private');
     var style = m.kind === 'flowchart' ? MP.select('mp-set-style', [['flowchart', 'Flowchart: from a Start to an End, fully checked'], ['process', 'Process flow: e.g. an escalation ladder; Start and End optional']], MP.flowStyle()) : null;
     var body = el('div', { class: 'stack' },
       MP.field('Map name', name),
-      MP.field('Shared with', share, MP.SHARE_HINT + (m.mine ? '' : ' Only its owner can make it private again.')),
+      el('div', { class: 'field' }, el('label', { text: 'Who can open it' }),
+        el('div', { class: 'row' }, el('span', { class: 'grow', text: MP.who(m) }),
+          el('button', { type: 'button', class: 'btn small', id: 'mp-set-share', text: 'Share', on: { click: function () {
+            var back = Core.$('.sheet-back'); if (back) back.click();
+            MP.share();
+          } } }))),
       style && MP.canEdit() ? MP.field('Kind of chart', style) : null,
       el('p', { class: 'faint', text: MP.KIND[m.kind] + ' map, by ' + (m.mine ? 'you' : m.owner) + '.' }), err);
     Core.sheet({ title: 'Map settings', body: body, actions: [
       { label: 'Delete map', kind: 'danger', onClick: function () {
         var b = MP.under(MP.M.root);
-        return Core.confirm('The map and its ' + MP.plural(b, 'branch', 'branches') + ' go to the trash for 30 days. Its owner, a tile admin or the super user can restore it from there.',
+        return Core.confirm('The map and its ' + MP.plural(b, 'branch', 'branches') + ' go to the trash for 30 days. Its owner or a manager of Maps can restore it from there.',
           { title: 'Delete ' + m.name + '?', ok: 'Delete map', danger: true }).then(function (yes) {
           if (!yes) return false;
           return MP.settled().then(function () { return MP.rpc('maps_map_delete', { p_map: m.id }); }).then(function () {
@@ -297,9 +301,9 @@
           if (style.value === 'process') p.style = 'process'; else delete p.style;
           MP.setList(root, 'props', p); MP.page.head();
         }
-        if (v === m.name && share.value === m.share) return true;
+        if (v === m.name) return true;
         return MP.settled().then(function () {
-          return MP.rpc('maps_map_save', { p_map: m.id, p_version: m.version, p_name: v === m.name ? null : v, p_share: share.value === m.share ? null : share.value });
+          return MP.rpc('maps_map_save', { p_map: m.id, p_version: m.version, p_name: v });
         }).then(function () { Core.toast('Map settings saved.', 'success'); MP.reload(); return true; },
           function (e) { return fail(err, MP.msg(e)); });
       } }] });
@@ -313,7 +317,7 @@
       return MP.rpc('maps_trash', { p_map: mapId || null }).then(function (r) {
         Core.clear(body);
         if (!r.maps.length && !r.branches.length) { body.appendChild(el('p', { class: 'muted', text: 'Nothing in the trash' + (mapId ? ' of this map.' : '.') })); return; }
-        body.appendChild(el('p', { class: 'muted', text: 'Deleted maps and branches stay here for 30 days. The owner of the map, a tile admin or the super user can restore them.' }));
+        body.appendChild(el('p', { class: 'muted', text: 'Deleted maps and branches stay here for 30 days. The owner of the map or a manager of Maps can restore them.' }));
         if (r.maps.length) {
           body.appendChild(el('h3', { class: 'section-title', text: 'Maps' }));
           r.maps.forEach(function (m) {
@@ -359,7 +363,7 @@
     var b = h.before || {}, a = h.after || {}, out = [];
     if (h.action === 'map_settings') {
       if (b.name !== a.name) out.push(el('div', {}, 'Name: ', el('del', { text: b.name }), ' → ', el('ins', { text: a.name })));
-      if (b.share !== a.share) out.push(el('div', { text: 'Shared: ' + (MP.SHARE[b.share] || b.share) + ' → ' + (MP.SHARE[a.share] || a.share) }));
+      if (b.share && b.share !== a.share) out.push(el('div', { text: 'Shared: ' + (MP.SHARE[b.share] || b.share) + ' → ' + (MP.SHARE[a.share] || a.share) }));   // before 006
       return out;
     }
     if (h.action === 'branch_edit' && MP.isFlow()) {

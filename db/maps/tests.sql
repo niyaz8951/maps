@@ -3,16 +3,14 @@
 -- back at the end, so nothing stays behind. Ends with "ALL MAPS TESTS PASSED".
 begin;
 
--- the tile on, with its rights, for this transaction only
-insert into core.tiles (id, name, tagline, icon, enabled, rights)
-values ('maps', 'Maps', 'Knowledge, piping and wiring maps', 'map', true, array['edit', 'verify'])
-on conflict (id) do update set enabled = true, rights = array['edit', 'verify'];
+-- the tile on for this transaction only (declared by 006: levels, container kind 'map')
+update core.tiles set enabled = true where id = 'maps';
 
 -- throw-away accounts
 do $$
 declare v_name text; v_id uuid;
 begin
-  foreach v_name in array array['mt_admin', 'mt_edit', 'mt_edit2', 'mt_verify', 'mt_read', 'mt_none', 'mt_pending', 'mt_disabled'] loop
+  foreach v_name in array array['mt_admin', 'mt_edit', 'mt_edit2', 'mt_verify', 'mt_read', 'mt_none', 'mt_pending', 'mt_disabled', 'mt_group'] loop
     v_id := gen_random_uuid();
     insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
       created_at, updated_at, confirmation_token, recovery_token, email_change_token_new, email_change, email_change_token_current,
@@ -22,14 +20,19 @@ begin
       now(), now(), '', '', '', '', '', '', '', '');
   end loop;
   update core.profiles set status = 'active' where username like 'mt\_%' and username <> 'mt_pending';
-  insert into core.tile_access (user_id, tile_id, is_admin, rights) select id, 'maps', true, '{}' from core.profiles where username = 'mt_admin';
-  insert into core.tile_access (user_id, tile_id, is_admin, rights) select id, 'maps', false, array['edit'] from core.profiles where username in ('mt_edit', 'mt_edit2', 'mt_disabled');
-  insert into core.tile_access (user_id, tile_id, is_admin, rights) select id, 'maps', false, array['verify'] from core.profiles where username = 'mt_verify';
-  insert into core.tile_access (user_id, tile_id, is_admin, rights) select id, 'maps', false, '{}' from core.profiles where username = 'mt_read';
+  -- levels (core 011): manage, contribute, approve, read; mt_group reaches Maps only through a group (contribute)
+  insert into core.tile_access (user_id, tile_id, level) select id, 'maps', 'manage' from core.profiles where username = 'mt_admin';
+  insert into core.tile_access (user_id, tile_id, level) select id, 'maps', 'contribute' from core.profiles where username in ('mt_edit', 'mt_edit2', 'mt_disabled');
+  insert into core.tile_access (user_id, tile_id, level) select id, 'maps', 'approve' from core.profiles where username = 'mt_verify';
+  insert into core.tile_access (user_id, tile_id, level) select id, 'maps', 'read' from core.profiles where username = 'mt_read';
+  insert into core.groups (name) values ('mt group') returning id into v_id;
+  insert into core.group_members (group_id, user_id) select v_id, id from core.profiles where username = 'mt_group';
+  insert into core.tile_group_access (tile_id, group_id, level) values ('maps', v_id, 'contribute');
 end $$;
 
 create temp table t_ids as select username k, id from core.profiles where username like 'mt\_%';
 create temp table t_v (k text primary key, v text);
+insert into t_v select 'group', id::text from core.groups where name = 'mt group';
 grant select on t_ids to public;
 grant select, insert, update on t_v to public;
 
@@ -67,7 +70,8 @@ begin
   -- ---------------------------------------------------------------- refused before anything: signed out, pending, disabled, no tile
   perform pg_temp.act_as(null);
   perform pg_temp.expect_error('select public.maps_list()', 'PERMISSION');
-  perform pg_temp.expect_error('select public.maps_create(''x'', ''knowledge'', ''private'', null)', 'PERMISSION');
+  perform pg_temp.expect_error('select public.maps_create(''x'', ''knowledge'', ''none'', null)', 'PERMISSION');
+  perform pg_temp.expect_error('select public.maps_map_save(gen_random_uuid(), 1, ''x'')', 'PERMISSION');
   reset role;
 
   perform pg_temp.act_as('mt_pending');
@@ -80,19 +84,22 @@ begin
   update core.profiles set status = 'disabled' where username = 'mt_disabled';
   perform set_config('role', 'authenticated', true);
   perform pg_temp.expect_error('select public.maps_list()', 'NOT_APPROVED');
-  perform pg_temp.expect_error('select public.maps_create(''x'', ''knowledge'', ''private'', null)', 'NOT_APPROVED');
+  perform pg_temp.expect_error('select public.maps_create(''x'', ''knowledge'', ''none'', null)', 'NOT_APPROVED');
+  perform pg_temp.expect_error('select public.maps_map_save(gen_random_uuid(), 1, ''x'')', 'NOT_APPROVED');
   reset role;
 
   perform pg_temp.act_as('mt_none');
   perform pg_temp.expect_error('select public.maps_list()', 'NO_ACCESS');
   perform pg_temp.expect_error('select public.maps_types()', 'NO_ACCESS');
   perform pg_temp.expect_error('select public.maps_search(''pump'')', 'NO_ACCESS');
+  perform pg_temp.expect_error('select public.maps_create(''x'', ''knowledge'', ''none'', null)', 'NO_ACCESS');
+  perform pg_temp.expect_error('select public.maps_map_save(gen_random_uuid(), 1, ''x'')', 'NO_ACCESS');
   reset role;
 
   -- ---------------------------------------------------------------- an editor makes three maps
   perform pg_temp.act_as('mt_edit');
   v := public.maps_list(); perform pg_temp.check((v -> 'me' ->> 'editor')::boolean and not (v -> 'me' ->> 'verifier')::boolean, 'editor flags');
-  v := public.maps_create(' Chiller ', 'knowledge', 'private',
+  v := public.maps_create(' Chiller ', 'knowledge', 'none',
     '[{"depth":0,"title":"Components"},{"depth":1,"title":"Compressor","notes":"Raises the pressure.","special":["Check the starting current"]},
       {"depth":1,"title":"Evaporator"},{"depth":0,"title":"Standards","props":{"layout":"columns"}},{"depth":5,"title":"AHRI 550/590"}]');
   v_a := (v ->> 'id')::uuid; perform pg_temp.put('a', v_a::text);
@@ -103,13 +110,13 @@ begin
   perform pg_temp.check((select count(*) from jsonb_array_elements(v -> 'branches') b where b ->> 'status' = 'to_verify') = 5, 'starter comes in to verify');
   perform pg_temp.check((select b ->> 'parent' from jsonb_array_elements(v -> 'branches') b where b ->> 'title' = 'AHRI 550/590')
     = (select b ->> 'id' from jsonb_array_elements(v -> 'branches') b where b ->> 'title' = 'Standards'), 'depth jump clamped to one level');
-  perform pg_temp.expect_error('select public.maps_create(''chiller'', ''knowledge'', ''private'', null)', 'INVALID:name_taken');
-  perform pg_temp.expect_error('select public.maps_create(''Pumps'', ''piping'', ''private'', null)', 'INVALID:kind');
-  perform pg_temp.expect_error('select public.maps_create(''Pumps'', ''knowledge'', ''everyone'', null)', 'INVALID:share');
-  perform pg_temp.expect_error('select public.maps_create(''   '', ''knowledge'', ''private'', null)', 'INVALID:title');
-  perform pg_temp.expect_error('select public.maps_create(''X'', ''knowledge'', ''private'', ''[{"title":"A","props":{"flow":3}}]'')', 'INVALID:props');
-  v_b := (public.maps_create('Team AHU', 'knowledge', 'team_edit', null) ->> 'id')::uuid; perform pg_temp.put('b', v_b::text);
-  v_c := (public.maps_create('Team FCU', 'knowledge', 'team_read', null) ->> 'id')::uuid; perform pg_temp.put('c', v_c::text);
+  perform pg_temp.expect_error('select public.maps_create(''chiller'', ''knowledge'', ''none'', null)', 'INVALID:name_taken');
+  perform pg_temp.expect_error('select public.maps_create(''Pumps'', ''piping'', ''none'', null)', 'INVALID:kind');
+  perform pg_temp.expect_error('select public.maps_create(''Pumps'', ''knowledge'', ''team_edit'', null)', 'INVALID:everyone');
+  perform pg_temp.expect_error('select public.maps_create(''   '', ''knowledge'', ''none'', null)', 'INVALID:title');
+  perform pg_temp.expect_error('select public.maps_create(''X'', ''knowledge'', ''none'', ''[{"title":"A","props":{"flow":3}}]'')', 'INVALID:props');
+  v_b := (public.maps_create('Team AHU', 'knowledge', 'edit', null) ->> 'id')::uuid; perform pg_temp.put('b', v_b::text);
+  v_c := (public.maps_create('Team FCU', 'knowledge', 'read', null) ->> 'id')::uuid; perform pg_temp.put('c', v_c::text);
   perform pg_temp.check(jsonb_array_length(public.maps_list() -> 'maps') = 3, 'list: three maps');
 
   -- branches: add, save with the version read, clash, checks
@@ -145,7 +152,7 @@ begin
   perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''web'', null, null, ''javascript:alert(1)'', null)', v_x), 'INVALID:target');
   perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''pipe'', ''p-supply'', %L, null, null)', v_x, v_y), 'INVALID:kind');
   perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', ''next'', %L, null, ''Yes'')', v_x, v_y), 'INVALID:kind');   -- arrows: flowcharts only
-  perform pg_temp.expect_error('select public.maps_create(''Pumps'', ''piping'', ''private'', null)', 'INVALID:kind');                  -- piping: step 4
+  perform pg_temp.expect_error('select public.maps_create(''Pumps'', ''piping'', ''none'', null)', 'INVALID:kind');                  -- piping: step 4
   -- links to another tile (003): '<tile-id>' or '<tile-id>/<path>', never a full address
   v := public.maps_line_add(v_x, 'tile', null, null, 'projects', 'Projects');
   v := public.maps_line_add(v_x, 'tile', null, null, '/hvac-notes/note.html?id=12#top', null);
@@ -212,7 +219,7 @@ begin
   v := public.maps_branch_add(v_z, 'Fan section'); perform pg_temp.put('b_fan', v ->> 'id');
   reset role;
 
-  -- ---------------------------------------------------------------- another editor: private map invisible, team maps per share
+  -- ---------------------------------------------------------------- another editor: private map invisible, team maps as shared
   perform pg_temp.act_as('mt_edit2');
   v_a := pg_temp.got('a')::uuid; v_b := pg_temp.got('b')::uuid; v_c := pg_temp.got('c')::uuid;
   perform pg_temp.check(jsonb_array_length(public.maps_list() -> 'maps') = 2, 'other editor: two team maps');
@@ -226,7 +233,7 @@ begin
   perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''link'', ''see'', %L, null, null)', pg_temp.got('b_fan'), pg_temp.got('y')), 'NOT_FOUND');
   v := public.maps_get(v_b); perform pg_temp.check(v -> 'map' ->> 'right' = 'edit', 'team_edit: edit');
   v := public.maps_branch_add(pg_temp.got('b_root')::uuid, 'Filter section');
-  perform pg_temp.expect_error(format('select public.maps_map_save(%L, 1, ''Renamed'', null)', v_b), 'NO_RIGHT');
+  perform pg_temp.expect_error(format('select public.maps_map_save(%L, 1, ''Renamed'')', v_b), 'NO_RIGHT');
   perform pg_temp.expect_error(format('select public.maps_map_delete(%L)', v_b), 'NO_RIGHT');
   v := public.maps_get(v_c); perform pg_temp.check(v -> 'map' ->> 'right' = 'read', 'team_read: read');
   select (b ->> 'id')::uuid into v_z from jsonb_array_elements(v -> 'branches') b where b ->> 'parent' is null;
@@ -241,12 +248,12 @@ begin
   perform pg_temp.expect_error(format('select public.maps_branch_save(%L, 1, ''{"notes":"Belt drive."}'')', pg_temp.got('b_fan')), 'INVALID:version');
   reset role;
 
-  -- ---------------------------------------------------------------- read only: no right
+  -- ---------------------------------------------------------------- level read
   perform pg_temp.act_as('mt_read');
   v_a := pg_temp.got('a')::uuid; v_c := pg_temp.got('c')::uuid;
   perform pg_temp.check(jsonb_array_length(public.maps_list() -> 'maps') = 2, 'reader: two team maps');
-  perform pg_temp.check(public.maps_get(pg_temp.got('b')::uuid) -> 'map' ->> 'right' = 'read', 'team_edit is read without the right');
-  perform pg_temp.expect_error('select public.maps_create(''Mine'', ''knowledge'', ''private'', null)', 'NO_RIGHT');
+  perform pg_temp.check(public.maps_get(pg_temp.got('b')::uuid) -> 'map' ->> 'right' = 'read', 'team map to edit: read at level read');
+  perform pg_temp.expect_error('select public.maps_create(''Mine'', ''knowledge'', ''none'', null)', 'NO_RIGHT');
   perform pg_temp.expect_error(format('select public.maps_branch_add(%L, ''x'')', pg_temp.got('b_root')), 'NO_RIGHT');
   perform pg_temp.expect_error(format('select public.maps_import(%L, ''[{"title":"x"}]'')', pg_temp.got('b_root')), 'NO_RIGHT');
   perform pg_temp.expect_error(format('select public.maps_verify(%L, true, false)', pg_temp.got('c_root')), 'NO_RIGHT');
@@ -260,7 +267,11 @@ begin
   perform pg_temp.check((v ->> 'changed')::integer = 1, 'verified');
   perform pg_temp.check((select b ->> 'status' from jsonb_array_elements(public.maps_get(v_b) -> 'branches') b where b ->> 'id' = pg_temp.got('b_fan')) = 'verified', 'status verified');
   perform pg_temp.expect_error(format('select public.maps_verify(%L, true, false)', pg_temp.got('y')), 'NOT_FOUND');   -- private map of another user
-  perform pg_temp.expect_error(format('select public.maps_branch_add(%L, ''x'')', pg_temp.got('b_root')), 'NO_RIGHT');
+  -- level approve includes contribute (core 011): a verifier may now also change a map shared to edit, not one to view
+  v := public.maps_branch_add(pg_temp.got('b_root')::uuid, 'Coil section');
+  perform pg_temp.check(v ->> 'status' = 'verified', 'a verifier''s own branch starts verified');
+  perform public.maps_branch_delete((v ->> 'id')::uuid);
+  perform pg_temp.expect_error(format('select public.maps_branch_add(%L, ''x'')', pg_temp.got('c_root')), 'NO_RIGHT');
   reset role;
 
   perform pg_temp.act_as('mt_edit2');
@@ -281,7 +292,7 @@ do $$
 declare v jsonb; v_f uuid; v_root uuid; v_s uuid; v_d uuid; v_p uuid; v_e uuid; v_new uuid; v_l uuid; v_priv uuid;
 begin
   perform pg_temp.act_as('mt_edit');
-  v := public.maps_create('Approval', 'flowchart', 'team_edit',
+  v := public.maps_create('Approval', 'flowchart', 'edit',
     '[{"key":"s","type":"start","title":"Request received","props":{"lane":"Sales"},"next":[{"to":"d"}]},
       {"key":"d","type":"decision","title":"Standard product?","props":{"lane":"Sales"},"next":[{"to":"p","label":"Yes"},{"to":"s","label":" No "}]},
       {"key":"p","title":"Prepare offer","props":{"lane":"Application"},"next":[{"to":"e"}]},
@@ -351,7 +362,7 @@ begin
   perform pg_temp.check(not exists (select 1 from jsonb_array_elements(public.maps_get(v_f) -> 'lines') l where (l ->> 'to')::uuid = v_p or (l ->> 'from')::uuid = v_p), 'arrows of a deleted step hidden');
   perform public.maps_branch_restore(v_p);
   perform pg_temp.check((select count(*) from jsonb_array_elements(public.maps_get(v_f) -> 'lines') l where (l ->> 'to')::uuid = v_p or (l ->> 'from')::uuid = v_p) = 3, 'arrows back with the step');
-  v_priv := (public.maps_create('My flow', 'flowchart', 'private', null) ->> 'id')::uuid; perform pg_temp.put('fpriv', v_priv::text);
+  v_priv := (public.maps_create('My flow', 'flowchart', 'none', null) ->> 'id')::uuid; perform pg_temp.put('fpriv', v_priv::text);
   reset role;
 
   -- another editor on a team-edit flowchart: may add arrows; a reader may not; a private one is not there
@@ -363,7 +374,7 @@ begin
   perform pg_temp.check(public.maps_get(v_f) -> 'map' ->> 'right' = 'read', 'reader reads the flowchart');
   perform pg_temp.expect_error(format('select public.maps_line_add(%L, ''flow'', null, %L, null, null)', v_s, v_e), 'NO_RIGHT');
   perform pg_temp.expect_error(format('select public.maps_branch_save(%L, 1, ''{"place":{"x":1,"y":1}}'')', v_s), 'NO_RIGHT');
-  perform pg_temp.expect_error('select public.maps_create(''Mine'', ''flowchart'', ''private'', null)', 'NO_RIGHT');
+  perform pg_temp.expect_error('select public.maps_create(''Mine'', ''flowchart'', ''none'', null)', 'NO_RIGHT');
   reset role;
   perform pg_temp.act_as('mt_verify');
   v := public.maps_verify(v_d, true, false);
@@ -425,7 +436,7 @@ do $$
 declare v jsonb; v_f uuid; v_root uuid; v_a uuid; v_b uuid; v_n uuid; v_l uuid;
 begin
   perform pg_temp.act_as('mt_edit');
-  v := public.maps_create('Escalation', 'flowchart', 'private',
+  v := public.maps_create('Escalation', 'flowchart', 'none',
     '[{"key":"a","title":"First line","props":{"group":"Office","show_notes":true},"notes":"- Answer\n- Log","next":[{"to":"b","label":"Not resolved"}]},
       {"key":"b","title":"Specialists","props":{"group":"Office"},"next":[{"to":"a","label":"Answer","reply":true}]},
       {"key":"n","type":"note","title":"Not handled here","notes":"Orders"}]');
@@ -473,16 +484,67 @@ begin
   perform pg_temp.check((select b ->> 'status' from jsonb_array_elements(public.maps_get(pg_temp.got('b')::uuid) -> 'branches') b where b ->> 'id' = pg_temp.got('b_fan')) = 'verified', 'verified again');
   reset role;
 
-  -- ---------------------------------------------------------------- tile admin: shared maps yes, private no
-  perform pg_temp.act_as('mt_admin');
+  -- ---------------------------------------------------------------- 006: Access. The owner shares his private map with people and a group
+  perform pg_temp.act_as('mt_edit');
   v_a := pg_temp.got('a')::uuid; v_b := pg_temp.got('b')::uuid;
+  v := public.maps_get(v_a);
+  perform pg_temp.check(v -> 'map' ->> 'everyone' is null and (v -> 'map' ->> 'mine')::boolean and (v -> 'map' ->> 'can_share')::boolean
+    and (v -> 'map' ->> 'shared')::integer = 0, 'own private map: only him, he may share it');
+  perform pg_temp.check((select m ->> 'everyone' from jsonb_array_elements(public.maps_list() -> 'maps') m where (m ->> 'id')::uuid = v_b) = 'edit', 'list: team map, everyone can edit');
+  v := public.core_share_set('maps', 'map', v_a::text, null, jsonb_build_array(
+    jsonb_build_object('type', 'user', 'id', (select id from t_ids where k = 'mt_edit2'), 'level', 'read'),
+    jsonb_build_object('type', 'user', 'id', (select id from t_ids where k = 'mt_read'), 'level', 'edit'),
+    jsonb_build_object('type', 'group', 'id', pg_temp.got('group'), 'level', 'edit')));
+  perform pg_temp.check((public.maps_get(v_a) -> 'map' ->> 'shared')::integer = 3, 'shared with two people and a group');
+  reset role;
+  perform pg_temp.act_as('mt_edit2');                                  -- Can view: reads it, changes nothing, shares nothing
+  perform pg_temp.check(public.maps_get(v_a) -> 'map' ->> 'right' = 'read', 'Can view: read');
+  perform pg_temp.check(not (public.maps_get(v_a) -> 'map' ->> 'can_share')::boolean, 'Can view: no Share');
+  perform pg_temp.expect_error(format('select public.maps_branch_add(%L, ''x'')', pg_temp.got('y')), 'NO_RIGHT');
+  perform pg_temp.expect_error(format('select public.core_share_set(''maps'', ''map'', %L, ''edit'', ''[]'')', v_a), 'NO_RIGHT');
+  perform pg_temp.check(jsonb_array_length(public.maps_search('compress')) = 1, 'search finds it once shared');
+  reset role;
+  perform pg_temp.act_as('mt_read');                                   -- Can edit, but his level is read: the level is the ceiling
+  perform pg_temp.check(public.maps_get(v_a) -> 'map' ->> 'right' = 'read', 'Can edit with level read: read');
+  perform pg_temp.expect_error(format('select public.maps_branch_add(%L, ''x'')', pg_temp.got('y')), 'NO_RIGHT');
+  reset role;
+  perform pg_temp.act_as('mt_group');                                  -- through the group: Can edit at contribute
+  perform pg_temp.check((public.maps_list() -> 'me' ->> 'editor')::boolean, 'a group gives the level');
+  perform pg_temp.check(public.maps_get(v_a) -> 'map' ->> 'right' = 'edit', 'group Can edit: edit');
+  v := public.maps_branch_add(pg_temp.got('y')::uuid, 'Scroll');
+  perform pg_temp.expect_error(format('select public.maps_map_save(%L, 1, ''Mine now'')', v_a), 'NO_RIGHT');
+  perform pg_temp.expect_error(format('select public.maps_map_delete(%L)', v_a), 'NO_RIGHT');
+  perform public.maps_branch_delete((v ->> 'id')::uuid);
+  reset role;
+  perform pg_temp.act_as('mt_verify');                                 -- not shared with him: not there
   perform pg_temp.expect_error(format('select public.maps_get(%L)', v_a), 'NOT_FOUND');
-  perform pg_temp.expect_error(format('select public.maps_map_delete(%L)', v_a), 'NOT_FOUND');
+  perform pg_temp.expect_error(format('select public.core_share_get(''maps'', ''map'', %L)', v_a), 'NOT_FOUND');
+  reset role;
+
+  -- ---------------------------------------------------------------- the tile's manager: every map, private ones too (owner, 2026-11-06)
+  perform pg_temp.act_as('mt_edit');
+  perform public.core_share_set('maps', 'map', v_a::text, null, '[]'::jsonb);   -- private again
+  reset role;
+  perform pg_temp.act_as('mt_admin');
+  v := public.maps_get(v_a);
+  perform pg_temp.check(v -> 'map' ->> 'right' = 'manage' and not (v -> 'map' ->> 'mine')::boolean, 'a manager opens a private map');
+  perform pg_temp.check(exists (select 1 from jsonb_array_elements(public.maps_list() -> 'maps') m where (m ->> 'id')::uuid = v_a), 'and sees it in the list');
+  v := public.core_share_owner_set('maps', 'map', v_a::text, (select id from t_ids where k = 'mt_edit2'));   -- Change owner
+  reset role;
+  perform pg_temp.act_as('mt_edit2');
+  v := public.maps_get(v_a);
+  perform pg_temp.check((v -> 'map' ->> 'mine')::boolean and v -> 'map' ->> 'right' = 'manage' and v -> 'map' ->> 'owner' = 'Mt Edit2', 'the new owner manages it');
+  reset role;
+  perform pg_temp.act_as('mt_edit');
+  perform pg_temp.expect_error(format('select public.maps_get(%L)', v_a), 'NOT_FOUND');                     -- private, not his any more
+  reset role;
+  perform pg_temp.act_as('mt_admin');
+  perform public.core_share_owner_set('maps', 'map', v_a::text, (select id from t_ids where k = 'mt_edit'));
   perform pg_temp.check(public.maps_get(v_b) -> 'map' ->> 'right' = 'manage', 'admin manages a shared map');
-  v := public.maps_map_save(v_b, 1, 'Team AHU map', 'team_read');
+  v := public.maps_map_save(v_b, 1, 'Team AHU map');
   perform pg_temp.check((v ->> 'version')::integer = 2, 'settings saved');
-  perform pg_temp.expect_error(format('select public.maps_map_save(%L, 1, ''Again'', null)', v_b), 'INVALID:version');
-  perform pg_temp.expect_error(format('select public.maps_map_save(%L, 2, null, ''private'')', v_b), 'NO_RIGHT');
+  perform pg_temp.check(public.core_share_get('maps', 'map', v_b::text) ->> 'name' = 'Team AHU map', 'the container follows the name');
+  perform pg_temp.expect_error(format('select public.maps_map_save(%L, 1, ''Again'')', v_b), 'INVALID:version');
   perform public.maps_map_delete(v_b);
   perform pg_temp.expect_error(format('select public.maps_get(%L)', v_b), 'NOT_FOUND');
   perform pg_temp.check(jsonb_array_length(public.maps_trash() -> 'maps') = 1, 'admin sees the shared map in the trash');
@@ -499,12 +561,12 @@ begin
   perform pg_temp.act_as('mt_edit');
   perform public.maps_map_delete(v_a);
   perform pg_temp.check(jsonb_array_length(public.maps_list() -> 'maps') = 2, 'deleted map leaves the list');
-  v_new := (public.maps_create('Chiller unit', 'knowledge', 'private', null) ->> 'id')::uuid;
+  v_new := (public.maps_create('Chiller unit', 'knowledge', 'none', null) ->> 'id')::uuid;
   v := public.maps_map_restore(v_a);
   perform pg_temp.check(v ->> 'name' = 'Chiller unit (restored)', 'restored under another name');
   reset role;
   perform pg_temp.act_as('mt_admin');
-  perform pg_temp.expect_error(format('select public.maps_map_restore(%L)', v_a), 'NOT_FOUND');
+  perform pg_temp.expect_error(format('select public.maps_map_restore(%L)', v_a), 'NOT_FOUND');   -- not in the trash any more
   reset role;
 
   -- ---------------------------------------------------------------- trash older than 30 days goes when the tile is used
@@ -515,6 +577,8 @@ begin
   reset role;
   perform pg_temp.check(not exists (select 1 from maps.maps where id = v_new), 'old trashed map purged');
   perform pg_temp.check(not exists (select 1 from maps.branches where id = pg_temp.got('b_fan')::uuid), 'old trashed branch purged');
+  perform pg_temp.check(not exists (select 1 from core.containers c where c.tile_id = 'maps' and c.id = v_new::text), 'a purged map takes its container');
+  perform pg_temp.check(exists (select 1 from core.containers c where c.tile_id = 'maps' and c.id = v_a::text and c.name = 'Chiller unit (restored)'), 'restored under another name: the container too');
 
   -- ---------------------------------------------------------------- 002: the schema holds a flowchart (screens in step 3)
   perform pg_temp.check((select t ->> 'name' from jsonb_array_elements(public.maps_types()) t where t ->> 'id' = 'decision') = 'Decision', 'shapes listed');
@@ -542,7 +606,8 @@ begin
   -- ---------------------------------------------------------------- the browser roles reach nothing directly
   perform set_config('role', 'authenticated', true);
   perform pg_temp.expect_error('select count(*) from maps.maps', 'PERMISSION');
-  perform pg_temp.expect_error('select maps.right_of(null, true, true, null, ''team_edit'')', 'PERMISSION');
+  perform pg_temp.expect_error('select maps.right_from(null)', 'PERMISSION');
+  perform pg_temp.expect_error('select core.container_put(''maps'', ''map'', gen_random_uuid()::text, ''x'', ''edit'', null)', 'PERMISSION');
   reset role;
 
   perform pg_temp.check((select count(*) from core.security_check()) = 0, 'security_check reports a problem');

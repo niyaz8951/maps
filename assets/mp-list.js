@@ -54,12 +54,12 @@
       if (!r.maps.length) {
         Core.clear(empty); empty.hidden = false;
         empty.appendChild(el('div', { class: 'state' }, el('h2', { text: 'No maps yet' }),
-          el('p', { text: MP.flags.editor ? 'Press Add map and name it after a product or a process, for example Chiller.' : 'When someone shares a map with the team, it shows here.' })));
+          el('p', { text: MP.flags.editor ? 'Press Add map and name it after a product or a process, for example Chiller.' : 'When someone shares a map with you, it shows here.' })));
         return;
       }
       r.maps.forEach(function (m) {
         var flow = m.kind === 'flowchart';
-        var tag = [flow ? 'Flowchart' : null, flow ? MP.plural(m.branches, 'step') : MP.plural(m.branches, 'branch', 'branches'), MP.SHARE[m.share] || m.share].filter(Boolean).join(' · ');
+        var tag = [flow ? 'Flowchart' : null, flow ? MP.plural(m.branches, 'step') : MP.plural(m.branches, 'branch', 'branches'), MP.who(m)].filter(Boolean).join(' · ');
         grid.appendChild(el('a', { class: 'tile mp-tile', href: '/maps/?map=' + encodeURIComponent(m.id) },
           el('span', { class: 'icon i-map' + (flow ? ' mp-flowicon' : ''), 'aria-hidden': 'true', 'data-accent': flow ? 'teal' : null }),
           el('span', { class: 'grow' },
@@ -105,12 +105,12 @@
       return el('optgroup', { label: g[0] }, g[1].map(function (x) { return el('option', { value: x[0], text: x[1] }); }));
     }));
     start.value = '';
-    var share = MP.shareSelect('mp-new-share', 'private');
+    var share = MP.everyoneSelect('mp-new-share', 'none');
     var err = el('p', { class: 'notice danger', hidden: true, role: 'alert' });
     var body = el('div', { class: 'stack' },
       MP.field('Map name', name, 'Usually the product or the process.'),
       MP.field('Start from', start, 'A knowledge map is a tree of branches; a flowchart is steps joined by arrows. A starter adds the usual parts to fill in, each one "to verify".'),
-      MP.field('Shared with', share, MP.SHARE_HINT + ' You can change it later.'),
+      MP.field('Who can open it', share, 'Later, Share on the map adds people or groups one by one, as Can view or Can edit. Managers of Maps can always open it.'),
       err);
     name.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(); } });
     var busy = false;
@@ -126,7 +126,7 @@
         return res.json();
       }).then(function (t) { tpl = t; return t.items; }) : Promise.resolve(null);
       return items.then(function (list) {
-        return MP.rpc('maps_create', { p_name: v, p_kind: KIND_OF[start.value] || 'knowledge', p_share: share.value, p_items: list });
+        return MP.rpc('maps_create', { p_name: v, p_kind: KIND_OF[start.value] || 'knowledge', p_everyone: share.value, p_items: list });
       }).then(function (r) {
         // a starter may set the kind of chart (a process flow), kept on the centre
         if (!tpl || tpl.style !== 'process') return r;
